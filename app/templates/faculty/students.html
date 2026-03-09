@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="page-title">My Students</h2>
+
+<div class="card">
+
+<h4>Batch: {{ batch.name }}</h4>
+
+<table class="custom-table">
+
+<thead>
+<tr>
+<th>PRN</th>
+<th>Name</th>
+<th>Email</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for s in students %}
+
+<tr>
+<td>{{ s.prn }}</td>
+<td>{{ s.name }}</td>
+<td>{{ s.email }}</td>
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+
+{% endblock %}

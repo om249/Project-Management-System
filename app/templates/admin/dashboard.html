@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="row mt-4">
+    <div class="col-md-4">
+        <div class="card p-3 shadow">
+            <h6>Total Batches</h6>
+            <h3>{{ total_batches }}</h3>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card p-3 shadow">
+            <h6>Total Stages</h6>
+            <h3>{{ total_stages }}</h3>
+        </div>
+    </div>
+</div>
+{% endblock %}

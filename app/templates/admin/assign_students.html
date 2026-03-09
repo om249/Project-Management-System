@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="page-title">Assign Students to {{ batch.name }}</h2>
+
+<form method="POST"
+      action="{{ url_for('admin.save_assigned_students', batch_id=batch._id) }}">
+
+<div class="card">
+
+<table class="custom-table">
+
+<thead>
+<tr>
+<th>Select</th>
+<th>PRN</th>
+<th>Name</th>
+<th>Email</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for s in students %}
+
+<tr>
+
+<td>
+<input type="checkbox"
+       name="students"
+       value="{{ s._id }}">
+</td>
+
+<td>{{ s.prn }}</td>
+<td>{{ s.name }}</td>
+<td>{{ s.email }}</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+<button class="btn-primary-custom">
+Assign Selected Students
+</button>
+
+</div>
+
+</form>
+
+{% endblock %}

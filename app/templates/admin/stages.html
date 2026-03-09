@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="page-title">Global Stage Management</h2>
+
+<!-- Add Stage -->
+<div class="card">
+    <form method="POST" class="inline-form">
+        <input type="text"
+               name="name"
+               placeholder="Enter stage name"
+               required>
+
+        <button type="submit" class="btn-success">
+            Add Stage
+        </button>
+    </form>
+</div>
+
+<!-- Select Batch -->
+<div class="card">
+    <form method="GET">
+        <label>Select Batch:</label>
+        <select name="batch"
+                onchange="this.form.submit()"
+                class="form-select-custom">
+
+            <option value="">-- Select Batch --</option>
+
+            {% for batch in batches %}
+            <option value="{{ batch._id }}"
+                {% if selected_batch_id == batch._id|string %}
+                    selected
+                {% endif %}>
+                {{ batch.name }}
+            </option>
+            {% endfor %}
+        </select>
+    </form>
+</div>
+
+<!-- Stage Table -->
+<div class="card">
+    <h4>Drag & Drop to Reorder</h4>
+
+    <table class="custom-table">
+        <thead>
+            <tr>
+                <th>Stage</th>
+                <th>Deadline</th>
+                <th width="120">Action</th>
+            </tr>
+        </thead>
+        <tbody id="stageList">
+
+        {% for stage in stages %}
+        <tr data-id="{{ stage._id }}">
+            <td>{{ stage.name }}</td>
+
+            <td>
+                {% if selected_batch_id %}
+                    <form method="POST"
+                          action="{{ url_for('admin.save_single_deadline') }}"
+                          class="deadline-form">
+
+                        <input type="hidden"
+                               name="stage_id"
+                               value="{{ stage._id }}">
+
+                        <input type="hidden"
+                               name="batch_id"
+                               value="{{ selected_batch_id }}">
+
+                        <input type="date"
+                               name="deadline"
+                               value="{{ deadline_dict.get(stage._id|string) }}"
+                               onchange="this.form.submit()">
+                    </form>
+                {% else %}
+                    <span class="text-muted">Select batch first</span>
+                {% endif %}
+            </td>
+
+            <td>
+                <a href="{{ url_for('admin.delete_stage', stage_id=stage._id) }}"
+                   class="btn-danger-custom btn-sm-custom">
+                   Delete
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+
+        </tbody>
+    </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<script>
+new Sortable(document.getElementById("stageList"), {
+    animation: 150,
+    onEnd: function () {
+
+        let order = [];
+
+        document.querySelectorAll("#stageList tr").forEach((row, index) => {
+            order.push({
+                id: row.dataset.id,
+                order: index + 1
+            });
+        });
+
+        fetch("{{ url_for('admin.update_stage_order') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(order)
+        }).then(() => location.reload());
+    }
+});
+</script>
+
+{% endblock %}

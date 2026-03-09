@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="page-title">Faculty Dashboard</h2>
+
+{% if not batch %}
+
+<div class="card">
+    <h4>No batch assigned yet</h4>
+    <p>Please contact admin.</p>
+</div>
+
+{% else %}
+
+<div class="card">
+    <h4>Assigned Batch</h4>
+    <p><strong>{{ batch.name }}</strong></p>
+</div>
+
+<div class="card">
+
+    <h4>Project Stages</h4>
+
+    <table class="custom-table">
+        <thead>
+            <tr>
+                <th>Stage</th>
+                <th>Deadline</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+        {% for stage in stages %}
+        <tr>
+
+            <td>{{ stage.name }}</td>
+
+            <td>
+                {% if deadline_dict.get(stage._id|string) %}
+                    {{ deadline_dict.get(stage._id|string).strftime("%Y-%m-%d") }}
+                {% else %}
+                    <span class="text-muted">Not set</span>
+                {% endif %}
+            </td>
+
+        </tr>
+        {% endfor %}
+
+        </tbody>
+    </table>
+
+</div>
+
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="page-title">Faculty Management</h2>
+
+<div class="card">
+    <form method="POST" class="inline-form">
+        <input type="text" name="name" placeholder="Faculty Name" required>
+        <input type="email" name="email" placeholder="Faculty Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+
+        <button type="submit" class="btn-success">
+            Add Faculty
+        </button>
+    </form>
+</div>
+
+<div class="card">
+    <h4>Existing Faculty</h4>
+
+    <table class="custom-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th width="120">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in faculty %}
+            <tr>
+                <td>{{ f.name }}</td>
+                <td>{{ f.email }}</td>
+                <td>
+                    <a href="{{ url_for('admin.delete_faculty', faculty_id=f._id) }}"
+                       class="btn-danger-custom btn-sm-custom">
+                        Delete
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}

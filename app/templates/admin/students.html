@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">Student Management</h2>
+
+<div class="card">
+
+<h4>Add Student</h4>
+
+<form method="POST" action="{{ url_for('admin.add_student') }}" class="inline-form">
+
+<input type="text" name="name" placeholder="Student Name" required>
+
+<input type="text" name="prn" placeholder="PRN" required>
+
+<select name="batch_id" required>
+
+<option value="">Select Batch</option>
+
+{% for batch in batches %}
+<option value="{{ batch._id }}">{{ batch.name }}</option>
+{% endfor %}
+
+</select>
+
+<button class="btn-success">Add</button>
+
+</form>
+
+</div>
+
+
+<div class="card">
+
+<h4>Bulk Upload</h4>
+
+<form method="POST"
+      action="{{ url_for('admin.upload_students') }}"
+      enctype="multipart/form-data"
+      class="upload-form">
+
+<div class="upload-container">
+
+<label class="file-upload">
+
+<input type="file"
+       id="fileInput"
+       name="file"
+       required>
+
+<span id="fileLabel">Choose Excel File</span>
+
+</label>
+
+<button class="btn-primary-custom upload-btn">
+Upload Students
+</button>
+
+<a href="{{ url_for('static', filename='templates/student_template.xlsx') }}"
+   class="template-link">
+Download Template
+</a>
+
+</div>
+
+</form>
+
+</div>
+
+
+<div class="card">
+
+<h4>Student List</h4>
+
+<table class="custom-table">
+
+<thead>
+<tr>
+<th>PRN</th>
+<th>Name</th>
+<th>Year</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for s in students %}
+<tr>
+
+<td>{{ s.prn }}</td>
+<td>{{ s.name }}</td>
+<td>{{ s.year }}</td>
+
+</tr>
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+
+
+<!-- FIXED SCRIPT LOCATION -->
+
+<script>
+
+document.addEventListener("DOMContentLoaded", function(){
+
+const fileInput = document.getElementById("fileInput");
+const fileLabel = document.getElementById("fileLabel");
+
+if(fileInput){
+
+fileInput.addEventListener("change", function(){
+
+if(this.files.length > 0){
+fileLabel.textContent = this.files[0].name;
+}
+
+});
+
+}
+
+});
+
+</script>
+
+{% endblock %}

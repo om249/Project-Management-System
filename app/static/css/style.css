@@ -1,0 +1,239 @@
+/* ================= GLOBAL ================= */
+body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background-color: #f4f6f9;
+}
+
+/* ================= SIDEBAR ================= */
+.sidebar {
+    width: 240px;
+    height: 100vh;
+    background-color: #1f2a40;
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar h4 {
+    font-weight: 600;
+}
+
+.nav-link {
+    padding: 12px 20px;
+    transition: 0.3s;
+}
+
+.nav-link:hover {
+    background-color: #2d3b55;
+}
+
+.sidebar .btn-danger {
+    border-radius: 6px;
+}
+
+/* ================= CONTENT ================= */
+.content {
+    margin-left: 240px;
+    padding: 40px;
+    width: 100%;
+}
+
+/* ================= PAGE TITLE ================= */
+.page-title {
+    font-weight: 600;
+    margin-bottom: 25px;
+}
+
+/* ================= CARD ================= */
+.card {
+    background: white;
+    padding: 25px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    margin-bottom: 25px;
+}
+
+/* ================= FORM ================= */
+.inline-form {
+    display: flex;
+    gap: 15px;
+}
+
+.inline-form input[type="text"] {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid #dcdcdc;
+    border-radius: 6px;
+}
+
+.inline-form input[type="text"]:focus {
+    outline: none;
+    border-color: #2563eb;
+}
+
+/* Batch dropdown */
+.form-select-custom {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    width: 250px;
+}
+
+/* ================= TABLE ================= */
+.custom-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.custom-table thead {
+    background-color: #f1f5f9;
+}
+
+.custom-table th,
+.custom-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.custom-table tbody tr:hover {
+    background-color: #f9fafb;
+}
+
+/* ================= BUTTONS ================= */
+.btn-primary-custom {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.btn-primary-custom:hover {
+    background-color: #1e40af;
+}
+
+.btn-success {
+    background-color: #15803d;
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.btn-success:hover {
+    background-color: #166534;
+}
+
+.btn-danger-custom {
+    background-color: #dc2626;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.btn-danger-custom:hover {
+    background-color: #b91c1c;
+}
+
+.btn-sm-custom {
+    font-size: 13px;
+}
+
+/* ================= DEADLINE INPUT ================= */
+.deadline-form input[type="date"] {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+/* ================= DRAG & DROP VISUAL ================= */
+#stageList tr {
+    cursor: grab;
+}
+
+/* Mentor Actions Layout */
+.mentor-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mentor-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.remove-form {
+    margin: 0;
+}
+
+/* Remove Button */
+.btn-remove {
+    background-color: white;
+    border: 1px solid #dc2626;
+    color: #dc2626;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: 0.3s;
+}
+
+.btn-remove:hover {
+    background-color: #dc2626;
+    color: white;
+}
+
+/* Upload Section */
+
+.upload-container{
+display:flex;
+align-items:center;
+gap:15px;
+margin-top:10px;
+}
+
+.file-upload{
+position:relative;
+overflow:hidden;
+display:inline-block;
+cursor:pointer;
+background:#f5f7fb;
+border:2px dashed #cfd6e4;
+padding:12px 20px;
+border-radius:8px;
+font-weight:500;
+color:#555;
+}
+
+.file-upload input[type=file]{
+position:absolute;
+left:0;
+top:0;
+opacity:0;
+cursor:pointer;
+height:100%;
+width:100%;
+}
+
+.upload-btn{
+padding:10px 20px;
+font-weight:600;
+}
+
+.template-link{
+font-weight:500;
+text-decoration:none;
+color:#2b6be4;
+}
+
+.template-link:hover{
+text-decoration:underline;
+}

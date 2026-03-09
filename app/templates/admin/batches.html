@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">Batch Management</h2>
+
+<div class="card">
+    <form method="POST" class="inline-form">
+        <input type="text" name="name" placeholder="Enter batch name" required>
+        <button type="submit" class="btn-primary-custom">
+            Create Batch
+        </button>
+    </form>
+</div>
+
+<div class="card">
+    <h4>Existing Batches</h4>
+
+    <table class="custom-table">
+        <thead>
+            <tr>
+                <th>Batch Name</th>
+                <th>Mentor</th>
+                <th>Assign Mentor</th>
+                <th>Assign Students</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+
+            {% for batch in batches %}
+            <tr>
+                <td>{{ batch.name }}</td>
+
+                <td>
+                    {% if batch.mentor_name %}
+                    <strong>{{ batch.mentor_name }}</strong>
+                    {% else %}
+                    <span class="text-muted">Not Assigned</span>
+                    {% endif %}
+                </td>
+
+               <td>
+
+<div class="mentor-actions">
+
+    <!-- Assign / Update Form -->
+    <form method="POST"
+          action="{{ url_for('admin.assign_mentor') }}"
+          class="mentor-form">
+
+        <input type="hidden"
+               name="batch_id"
+               value="{{ batch._id }}">
+
+        <select name="mentor_id" required style="height: 35px;">
+
+            <option value="">Select Mentor</option>
+
+            {% for f in faculty %}
+                {% if not f._id in batches | map(attribute='mentor_id') | list
+                      or batch.mentor_name == f.name %}
+
+                <option value="{{ f._id }}"
+                    {% if batch.mentor_name == f.name %} selected {% endif %}>
+                    {{ f.name }}
+                </option>
+
+                {% endif %}
+            {% endfor %}
+
+        </select>
+
+        <button type="submit"
+                class="btn-success btn-sm-custom">
+            Update
+        </button>
+    </form>
+
+    {% if batch.mentor_name %}
+    <!-- Remove Form -->
+    <form method="POST"
+          action="{{ url_for('admin.assign_mentor') }}"
+          class="remove-form">
+
+        <input type="hidden"
+               name="batch_id"
+               value="{{ batch._id }}">
+
+        <input type="hidden"
+               name="mentor_id"
+               value="remove">
+
+        <button type="submit"
+                class="btn-remove"
+                title="Remove Mentor">
+            ✖
+        </button>
+    </form>
+    {% endif %}
+
+
+    
+</div>
+
+</td>
+
+<td>
+  <a href="{{ url_for('admin.assign_students_page', batch_id=batch._id) }}"
+   class="btn-primary-custom btn-sm-custom">
+   Assign Students
+</a>
+
+</td>
+
+
+                <td>
+                    <a href="{{ url_for('admin.delete_batch', batch_id=batch._id) }}"
+                        class="btn-danger-custom btn-sm-custom">
+                        Delete
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
