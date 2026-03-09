@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">Student Submissions</h2>
+
+<div class="card">
+
+<table class="custom-table">
+
+<thead>
+<tr>
+<th>Student</th>
+<th>Stage</th>
+<th>File</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for sub in submissions %}
+
+<tr>
+
+<td>{{ sub.student_id }}</td>
+
+<td>{{ sub.stage_id }}</td>
+
+<td>
+<a href="/uploads/{{ sub.file_name }}" target="_blank">
+View
+</a>
+</td>
+
+<td>{{ sub.status }}</td>
+
+<td>
+
+<a href="{{ url_for('admin.approve_submission', id=sub._id) }}"
+class="btn-success btn-sm-custom">
+Approve
+</a>
+
+<a href="{{ url_for('admin.reject_submission', id=sub._id) }}"
+class="btn-danger-custom btn-sm-custom">
+Reject
+</a>
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+
+{% endblock %}

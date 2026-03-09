@@ -6,9 +6,9 @@ class User(UserMixin):
 
     def __init__(self, data):
         self.id = str(data["_id"])
-        self.role = data["role"]
+        self.role = data.get("role")   # SAFE (no KeyError)
+        self.password_changed = data.get("password_changed", True)
         self.data = data
-
 
     @staticmethod
     def get_by_id(user_id):

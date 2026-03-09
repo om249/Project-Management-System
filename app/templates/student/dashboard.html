@@ -1,31 +1,19 @@
 {% extends "base.html" %}
-
 {% block content %}
 
-<h2>Student Dashboard</h2>
+<h2 class="page-title">Student Dashboard</h2>
 
-<div class="card mb-3 p-3">
-
-<h4>Student</h4>
-<p>{{ student.name }}</p>
-
-<h4>Batch</h4>
-<p>{{ batch.name }}</p>
-
-</div>
-
-
-<div class="card p-3">
-
+<div class="card">
 <h4>Project Stages</h4>
 
-<table class="table">
+<table class="custom-table">
 
 <thead>
 <tr>
 <th>Stage</th>
 <th>Deadline</th>
-<th>Submission</th>
+<th>Upload</th>
+<th>Status</th>
 </tr>
 </thead>
 
@@ -38,16 +26,16 @@
 <td>{{ stage.name }}</td>
 
 <td>
-
 {% if deadline_dict.get(stage._id|string) %}
 {{ deadline_dict.get(stage._id|string).strftime("%Y-%m-%d") }}
 {% else %}
-Not Set
+Not set
 {% endif %}
-
 </td>
 
 <td>
+
+{% if submission_dict.get(stage._id|string) %}
 
 <form method="POST"
       action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
@@ -55,11 +43,49 @@ Not Set
 
 <input type="file" name="file" required>
 
-<button class="btn-primary-custom btn-sm-custom">
+<button class="btn-warning btn-sm-custom">
+Reupload
+</button>
+
+</form>
+
+{% else %}
+
+<form method="POST"
+      action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
+      enctype="multipart/form-data">
+
+<input type="file" name="file" required>
+
+<button class="btn-success btn-sm-custom">
 Upload
 </button>
 
 </form>
+
+{% endif %}
+
+</td>
+
+<td>
+
+{% if submission_dict.get(stage._id|string) %}
+
+{% if submission_dict.get(stage._id|string).status == "approved" %}
+<span class="text-success">Approved</span>
+
+{% elif submission_dict.get(stage._id|string).status == "rejected" %}
+<span class="text-danger">Rejected</span>
+
+{% else %}
+<span class="text-warning">Pending</span>
+{% endif %}
+
+{% else %}
+
+<span class="text-muted">Not submitted</span>
+
+{% endif %}
 
 </td>
 

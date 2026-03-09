@@ -586,17 +586,21 @@ def faculty_students():
         batch=batch
     )
 
-
-@admin_bp.route("/mentor/submissions")
+# ---------------- MENTOR SUBMISSIONS ----------------
+@admin_bp.route("/mentor-submissions")
 @login_required
 @role_required("faculty")
 def mentor_submissions():
 
-    faculty_id = current_user.id
+    mentor_id = ObjectId(current_user.id)
 
     batch = current_app.db.batches.find_one({
-        "mentor_id": ObjectId(faculty_id)
+        "mentor_id": mentor_id
     })
+
+    if not batch:
+        flash("No batch assigned")
+        return redirect(url_for("admin.faculty_dashboard"))
 
     students = list(current_app.db.students.find({
         "batch_id": batch["_id"]
@@ -610,29 +614,35 @@ def mentor_submissions():
 
     return render_template(
         "faculty/submissions.html",
-        submissions=submissions
+        submissions=submissions,
+        students=students
     )
 
-@admin_bp.route("/approve/<submission_id>")
+@admin_bp.route("/approve-submission/<id>")
 @login_required
 @role_required("faculty")
-def approve_submission(submission_id):
+def approve_submission(id):
 
     current_app.db.submissions.update_one(
-        {"_id": ObjectId(submission_id)},
+        {"_id": ObjectId(id)},
         {"$set": {"status": "approved"}}
     )
 
+    flash("Submission approved")
+
     return redirect(url_for("admin.mentor_submissions"))
 
-@admin_bp.route("/reject/<submission_id>")
+@admin_bp.route("/reject-submission/<id>")
 @login_required
 @role_required("faculty")
-def reject_submission(submission_id):
+def reject_submission(id):
 
     current_app.db.submissions.update_one(
-        {"_id": ObjectId(submission_id)},
+        {"_id": ObjectId(id)},
         {"$set": {"status": "rejected"}}
     )
 
+    flash("Submission rejected")
+
     return redirect(url_for("admin.mentor_submissions"))
+

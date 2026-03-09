@@ -49,14 +49,14 @@
                 {% endif %}
 
                 <li class="nav-item">
-                    {% if current_user.role == "admin" %} 
+                    {% if current_user.role == "admin" %}
                     <a class="nav-link text-white" href="{{ url_for('admin.manage_students') }}">
                         Students
                     </a>
-                    </li>
-                    {% endif %}
+                </li>
+                {% endif %}
 
-                    <li class="nav-item">
+                <li class="nav-item">
                     {% if current_user.role == "faculty" %}
                     <a class="nav-link text-white" href="{{ url_for('admin.faculty_students') }}">
                         Students
@@ -71,6 +71,25 @@
                         Dashboard
                     </a>
                 </li>
+
+                <li class="nav-item">
+                    <a class="nav-link text-white" href="{{ url_for('admin.mentor_submissions') }}">
+                        Submissions
+                    </a>
+                </li>
+
+                {% endif %}
+
+
+                {% if current_user.role == "student" %}
+
+                <li class="nav-item">
+                    <a class="nav-link text-white" href="{{ url_for('student.dashboard') }}">
+                        Dashboard
+                    </a>
+                </li>
+
+
 
                 {% endif %}
 
