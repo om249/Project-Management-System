@@ -23,29 +23,41 @@
 
 <tr>
 
-<td>{{ sub.student_id }}</td>
+<td>{{ student_map.get(sub.student_id|string) }}</td>
 
-<td>{{ sub.stage_id }}</td>
+<td>{{ stage_map.get(sub.stage_id|string) }}</td>
 
 <td>
-<a href="/uploads/{{ sub.file_name }}" target="_blank">
-View
+<a href="{{ url_for('admin.view_file', filename=sub.file_name) }}" target="_blank">
+View File
 </a>
 </td>
 
-<td>{{ sub.status }}</td>
+<td>
+
+{% if sub.status == "approved" %}
+<span class="status-badge approved">Approved</span>
+
+{% elif sub.status == "rejected" %}
+<span class="status-badge rejected">Rejected</span>
+
+{% else %}
+<span class="status-badge pending">Pending</span>
+{% endif %}
+
+</td>
 
 <td>
 
-<a href="{{ url_for('admin.approve_submission', id=sub._id) }}"
-class="btn-success btn-sm-custom">
-Approve
-</a>
+<form method="POST" action="{{ url_for('admin.approve_submission', submission_id=sub._id) }}" style="display:inline;">
+    <input type="text" name="remark" placeholder="Remark" required>
+    <button class="btn-success">Approve</button>
+</form>
 
-<a href="{{ url_for('admin.reject_submission', id=sub._id) }}"
-class="btn-danger-custom btn-sm-custom">
-Reject
-</a>
+<form method="POST" action="{{ url_for('admin.reject_submission', submission_id=sub._id) }}" style="display:inline;">
+    <input type="text" name="remark" placeholder="Remark" required>
+    <button class="btn-danger">Reject</button>
+</form>
 
 </td>
 

@@ -7,6 +7,7 @@ from bson.objectid import ObjectId
 from datetime import datetime
 from app.decorators.role_required import role_required
 from app import bcrypt
+from flask import send_from_directory
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -606,6 +607,11 @@ def mentor_submissions():
         "batch_id": batch["_id"]
     }))
 
+    student_map = {str(s["_id"]): s["name"] for s in students}
+
+    stages = list(current_app.db.stages.find())
+    stage_map = {str(s["_id"]): s["name"] for s in stages}
+
     student_ids = [s["_id"] for s in students]
 
     submissions = list(current_app.db.submissions.find({
@@ -615,34 +621,67 @@ def mentor_submissions():
     return render_template(
         "faculty/submissions.html",
         submissions=submissions,
-        students=students
+        student_map=student_map,
+        stage_map=stage_map
     )
 
-@admin_bp.route("/approve-submission/<id>")
+@admin_bp.route("/approve-submission/<submission_id>", methods=["POST"])
 @login_required
 @role_required("faculty")
-def approve_submission(id):
+def approve_submission(submission_id):
+
+    remark = request.form.get("remark")
 
     current_app.db.submissions.update_one(
-        {"_id": ObjectId(id)},
-        {"$set": {"status": "approved"}}
+        {"_id": ObjectId(submission_id)},
+        {
+            "$set": {
+                "status": "approved",
+                "remark": remark,
+                "reviewed_at": datetime.utcnow()
+            }
+        }
     )
 
     flash("Submission approved")
+    return redirect(url_for("admin.student_submissions"))
 
-    return redirect(url_for("admin.mentor_submissions"))
-
-@admin_bp.route("/reject-submission/<id>")
+@admin_bp.route("/reject-submission/<submission_id>", methods=["POST"])
 @login_required
 @role_required("faculty")
-def reject_submission(id):
+def reject_submission(submission_id):
+
+    remark = request.form.get("remark")
 
     current_app.db.submissions.update_one(
-        {"_id": ObjectId(id)},
-        {"$set": {"status": "rejected"}}
+        {"_id": ObjectId(submission_id)},
+        {
+            "$set": {
+                "status": "rejected",
+                "remark": remark,
+                "reviewed_at": datetime.utcnow()
+            }
+        }
     )
 
     flash("Submission rejected")
+    return redirect(url_for("admin.student_submissions"))
 
-    return redirect(url_for("admin.mentor_submissions"))
+@admin_bp.route("/view-file/<filename>")
+@login_required
+def view_file(filename):
 
+    return send_from_directory(
+        current_app.config["UPLOAD_FOLDER"],
+        filename
+    )
+
+@admin_bp.route("/download/<filename>")
+@login_required
+def download_file(filename):
+
+    return send_from_directory(
+        current_app.config["UPLOAD_FOLDER"],
+        filename,
+        as_attachment=False
+    )

@@ -237,3 +237,45 @@ color:#2b6be4;
 .template-link:hover{
 text-decoration:underline;
 }
+
+.file-link{
+color:#2563eb;
+font-weight:500;
+text-decoration:none;
+}
+
+.file-link:hover{
+text-decoration:underline;
+}
+
+.status-badge{
+padding:6px 12px;
+border-radius:6px;
+font-size:13px;
+font-weight:600;
+}
+
+.status-badge.pending{
+background:#fff3cd;
+color:#856404;
+}
+
+.status-badge.approved{
+background:#d4edda;
+color:#155724;
+}
+
+.status-badge.rejected{
+background:#f8d7da;
+color:#721c24;
+}
+
+.btn-success{
+padding:6px 12px;
+border-radius:6px;
+}
+
+.btn-danger-custom{
+padding:6px 12px;
+border-radius:6px;
+}

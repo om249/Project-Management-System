@@ -14,6 +14,7 @@
 <th>Deadline</th>
 <th>Upload</th>
 <th>Status</th>
+<th>Remark</th>
 </tr>
 </thead>
 
@@ -87,6 +88,14 @@ Upload
 
 {% endif %}
 
+</td>
+
+<td>
+{% if submission_dict.get(stage._id|string) and submission_dict.get(stage._id|string).remark %}
+{{ submission_dict.get(stage._id|string).remark }}
+{% else %}
+-
+{% endif %}
 </td>
 
 </tr>

@@ -56,8 +56,12 @@ def dashboard():
     for d in deadlines:
         deadline_dict[str(d["stage_id"])] = d["deadline"]
 
+    # submissions = list(current_app.db.submissions.find({
+    #     "student_id": ObjectId(current_user.id)
+    # }))
+    
     submissions = list(current_app.db.submissions.find({
-        "student_id": ObjectId(current_user.id)
+        "student_id": student["_id"]
     }))
 
     submission_dict = {}
