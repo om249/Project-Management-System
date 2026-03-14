@@ -47,19 +47,24 @@ View File
 
 </td>
 
-<td>
 
-<form method="POST" action="{{ url_for('admin.approve_submission', submission_id=sub._id) }}" style="display:inline;">
-    <input type="text" name="remark" placeholder="Remark" required>
-    <button class="btn-success">Approve</button>
-</form>
 
-<form method="POST" action="{{ url_for('admin.reject_submission', submission_id=sub._id) }}" style="display:inline;">
-    <input type="text" name="remark" placeholder="Remark" required>
-    <button class="btn-danger">Reject</button>
-</form>
+<td class="action-buttons">
+
+<button class="btn-approve"
+onclick="openRemark('{{ sub._id }}','approve')">
+✔ Approve </button>
+
+<button class="btn-reject"
+onclick="openRemark('{{ sub._id }}','reject')">
+✖ Reject </button>
 
 </td>
+
+
+want to see the whole code
+
+
 
 </tr>
 
@@ -69,6 +74,65 @@ View File
 
 </table>
 
+
+<div id="remarkModal" class="remark-modal">
+
+<div class="remark-content">
+
+<h4>Mentor Remark</h4>
+
+<form id="remarkForm" method="POST">
+
+<textarea
+name="remark"
+placeholder="Write feedback for student..."
+required></textarea>
+
+<div class="remark-actions">
+
+<button type="submit" class="btn-approve">
+Submit
+</button>
+
+<button type="button"
+class="btn-reject"
+onclick="closeRemark()">
+Cancel </button>
+
 </div>
+
+</form>
+
+</div>
+
+</div>
+
+
+</div>
+
+
+<script>
+
+function openRemark(id,type){
+
+const modal = document.getElementById("remarkModal");
+const form = document.getElementById("remarkForm");
+
+if(type === "approve"){
+form.action = "/admin/approve-submission/" + id;
+}else{
+form.action = "/admin/reject-submission/" + id;
+}
+
+modal.style.display = "flex";
+
+}
+
+function closeRemark(){
+document.getElementById("remarkModal").style.display = "none";
+}
+
+</script>
+
 
 {% endblock %}

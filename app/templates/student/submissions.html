@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="page-title">Project Submissions</h2>
+
+<div class="card">
+
+<h4>Project Stages</h4>
+
+<table class="custom-table">
+
+<thead>
+<tr>
+<th>Stage</th>
+<th>Deadline</th>
+<th>Upload</th>
+<th>Status</th>
+<th>Late</th>
+<th>Remark</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for stage in stages %}
+
+<tr>
+
+<td>{{ stage.name }}</td>
+
+<td>
+{% if deadline_dict.get(stage._id|string) %}
+{{ deadline_dict.get(stage._id|string).strftime("%Y-%m-%d") }}
+{% else %}
+Not set
+{% endif %}
+</td>
+
+<td>
+
+<form method="POST"
+      action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
+      enctype="multipart/form-data"
+      class="upload-inline">
+
+<input type="file" name="file" required>
+
+<button class="btn-success">Upload</button>
+
+</form>
+
+</td>
+
+<td>
+
+{% if submission_dict.get(stage._id|string) %}
+{{ submission_dict.get(stage._id|string).status }}
+{% else %}
+Not submitted
+{% endif %}
+
+</td>
+
+<td>
+
+{% if submission_dict.get(stage._id|string) and submission_dict.get(stage._id|string).late %} <span class="text-danger">Late</span>
+{% else %}
+----------
+
+{% endif %}
+
+</td>
+
+<td>
+
+{% if submission_dict.get(stage._id|string) and submission_dict.get(stage._id|string).remark %}
+{{ submission_dict.get(stage._id|string).remark }}
+{% else %}
+----------
+
+{% endif %}
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+
+{% endblock %}

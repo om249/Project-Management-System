@@ -1,110 +1,65 @@
 {% extends "base.html" %}
+
 {% block content %}
 
 <h2 class="page-title">Student Dashboard</h2>
 
+<div class="dashboard-grid">
+
+<!-- PROFILE CARD -->
+
 <div class="card">
-<h4>Project Stages</h4>
 
-<table class="custom-table">
+<h4>Student Profile</h4>
 
-<thead>
-<tr>
-<th>Stage</th>
-<th>Deadline</th>
-<th>Upload</th>
-<th>Status</th>
-<th>Remark</th>
-</tr>
-</thead>
+<p><strong>Name:</strong> {{ student.name }}</p>
 
-<tbody>
+<p><strong>PRN:</strong> {{ student.prn }}</p>
 
-{% for stage in stages %}
+<p><strong>Year:</strong> {{ student.year }}</p>
 
-<tr>
+<p><strong>Batch:</strong> {{ batch.name }}</p>
 
-<td>{{ stage.name }}</td>
-
-<td>
-{% if deadline_dict.get(stage._id|string) %}
-{{ deadline_dict.get(stage._id|string).strftime("%Y-%m-%d") }}
-{% else %}
-Not set
-{% endif %}
-</td>
-
-<td>
-
-{% if submission_dict.get(stage._id|string) %}
-
-<form method="POST"
-      action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
-      enctype="multipart/form-data">
-
-<input type="file" name="file" required>
-
-<button class="btn-warning btn-sm-custom">
-Reupload
-</button>
-
-</form>
-
-{% else %}
-
-<form method="POST"
-      action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
-      enctype="multipart/form-data">
-
-<input type="file" name="file" required>
-
-<button class="btn-success btn-sm-custom">
-Upload
-</button>
-
-</form>
-
+{% if mentor %}
+<p><strong>Mentor:</strong> {{ mentor.name }}</p>
+<p><strong>Email:</strong> {{ mentor.email }}</p>
 {% endif %}
 
-</td>
+</div>
 
-<td>
 
-{% if submission_dict.get(stage._id|string) %}
+<!-- PROGRESS CARD -->
 
-{% if submission_dict.get(stage._id|string).status == "approved" %}
-<span class="text-success">Approved</span>
+<div class="card">
 
-{% elif submission_dict.get(stage._id|string).status == "rejected" %}
-<span class="text-danger">Rejected</span>
+<h4>Project Progress</h4>
 
-{% else %}
-<span class="text-warning">Pending</span>
-{% endif %}
+<div class="circle-progress">
 
-{% else %}
+<svg width="160" height="160">
 
-<span class="text-muted">Not submitted</span>
+<circle cx="80" cy="80" r="65"
+stroke="#e5e7eb"
+stroke-width="12"
+fill="none"/>
 
-{% endif %}
+<circle cx="80" cy="80" r="65"
+stroke="#22c55e"
+stroke-width="12"
+fill="none"
+stroke-dasharray="408"
+stroke-dashoffset="{{ 408 - (408 * progress / 100) }}"
+stroke-linecap="round"/>
 
-</td>
+</svg>
 
-<td>
-{% if submission_dict.get(stage._id|string) and submission_dict.get(stage._id|string).remark %}
-{{ submission_dict.get(stage._id|string).remark }}
-{% else %}
--
-{% endif %}
-</td>
+<div class="progress-text">
+{{ progress }}%
+</div>
 
-</tr>
+</div>
 
-{% endfor %}
-
-</tbody>
-
-</table>
+</div>
 
 </div>
 

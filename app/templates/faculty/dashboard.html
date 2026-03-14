@@ -4,55 +4,135 @@
 
 <h2 class="page-title">Faculty Dashboard</h2>
 
-{% if not batch %}
-
 <div class="card">
-    <h4>No batch assigned yet</h4>
-    <p>Please contact admin.</p>
+<h4>Assigned Batch</h4>
+<p><strong>{{ batch.name }}</strong></p>
 </div>
 
+<div class="card">
+
+<h4>Project Stage Deadlines</h4>
+
+<table class="custom-table">
+
+<thead>
+<tr>
+<th>Stage</th>
+<th>Deadline</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for stage in stages %}
+
+<tr>
+<td>{{ stage.name }}</td>
+
+<td>
+{% if deadline_dict.get(stage._id|string) %}
+{{ deadline_dict.get(stage._id|string).strftime("%Y-%m-%d") }}
 {% else %}
-
-<div class="card">
-    <h4>Assigned Batch</h4>
-    <p><strong>{{ batch.name }}</strong></p>
-</div>
-
-<div class="card">
-
-    <h4>Project Stages</h4>
-
-    <table class="custom-table">
-        <thead>
-            <tr>
-                <th>Stage</th>
-                <th>Deadline</th>
-            </tr>
-        </thead>
-
-        <tbody>
-
-        {% for stage in stages %}
-        <tr>
-
-            <td>{{ stage.name }}</td>
-
-            <td>
-                {% if deadline_dict.get(stage._id|string) %}
-                    {{ deadline_dict.get(stage._id|string).strftime("%Y-%m-%d") }}
-                {% else %}
-                    <span class="text-muted">Not set</span>
-                {% endif %}
-            </td>
-
-        </tr>
-        {% endfor %}
-
-        </tbody>
-    </table>
-
-</div>
-
+Not set
 {% endif %}
+</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+
+<div class="card">
+
+<h4>Students</h4>
+
+<table class="custom-table">
+
+<thead>
+<tr>
+<th>Name</th>
+<th>PRN</th>
+<th>Year</th>
+<th>Progress</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for student in students %}
+
+{% set approved = 0 %}
+
+{% for stage in stages %}
+{% set key = student._id|string + "_" + stage._id|string %}
+{% set sub = submission_dict.get(key) %}
+
+{% if sub and sub.status == "approved" %}
+{% set approved = approved + 1 %}
+{% endif %}
+
+{% endfor %}
+
+{% set progress = (approved / stages|length * 100) if stages|length > 0 else 0 %}
+
+<tr>
+
+<td>{{ student.name }}</td>
+
+<td>{{ student.prn }}</td>
+
+<td>{{ student.year }}</td>
+
+<td>
+
+<div class="progress-circle">
+
+<svg width="60" height="60">
+
+<circle
+cx="30"
+cy="30"
+r="24"
+stroke="#e5e7eb"
+stroke-width="6"
+fill="none"
+/>
+
+<circle
+cx="30"
+cy="30"
+r="24"
+stroke="#22c55e"
+stroke-width="6"
+fill="none"
+stroke-dasharray="151"
+stroke-dashoffset="{{ 151 - (151 * progress / 100) }}"
+stroke-linecap="round"
+/>
+
+</svg>
+
+<div class="circle-text">
+{{ progress|round }}%
+</div>
+
+</div>
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
 
 {% endblock %}

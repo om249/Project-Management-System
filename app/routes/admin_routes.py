@@ -333,42 +333,53 @@ def delete_faculty(faculty_id):
     return redirect(url_for("admin.manage_faculty"))
 
 # ===================== FACULTY DASHBOARD =====================
-@admin_bp.route("/faculty-dashboard")
+@admin_bp.route("/faculty/dashboard")
 @login_required
 @role_required("faculty")
 def faculty_dashboard():
 
-    mentor_id = current_user.id
+    mentor_id = ObjectId(current_user.id)
 
     batch = current_app.db.batches.find_one({
-        "mentor_id": ObjectId(mentor_id)
+        "mentor_id": mentor_id
     })
 
-    if not batch:
-        return render_template(
-            "faculty/dashboard.html",
-            batch=None
-        )
-
+    students = []
     stages = list(current_app.db.stages.find().sort("order", 1))
+
+    if batch:
+        students = list(current_app.db.students.find({
+            "batch_id": batch["_id"]
+        }))
+
+    submissions = list(current_app.db.submissions.find({
+        "student_id": {"$in": [s["_id"] for s in students]}
+    }))
+
+    submission_dict = {}
+
+    for s in submissions:
+        key = str(s["student_id"]) + "_" + str(s["stage_id"])
+        submission_dict[key] = s
 
     deadlines = list(current_app.db.deadlines.find({
         "batch_id": batch["_id"]
-    }))
+    })) if batch else []
 
-    deadline_dict = {
-        str(d["stage_id"]): d["deadline"]
-        for d in deadlines
-    }
+    deadline_dict = {}
+
+    for d in deadlines:
+        deadline_dict[str(d["stage_id"])] = d["deadline"]
 
     return render_template(
         "faculty/dashboard.html",
         batch=batch,
+        students=students,
         stages=stages,
+        submission_dict=submission_dict,
         deadline_dict=deadline_dict
     )
 
-# ---------------- STUDENT MANAGEMENT ----------------
 # ---------------- STUDENT MANAGEMENT ----------------
 @admin_bp.route("/students")
 @login_required
@@ -644,7 +655,7 @@ def approve_submission(submission_id):
     )
 
     flash("Submission approved")
-    return redirect(url_for("admin.student_submissions"))
+    return redirect(url_for("admin.mentor_submissions"))
 
 @admin_bp.route("/reject-submission/<submission_id>", methods=["POST"])
 @login_required
@@ -665,7 +676,7 @@ def reject_submission(submission_id):
     )
 
     flash("Submission rejected")
-    return redirect(url_for("admin.student_submissions"))
+    return redirect(url_for("admin.mentor_submissions"))
 
 @admin_bp.route("/view-file/<filename>")
 @login_required
