@@ -1,10 +1,11 @@
 from flask import Flask
-from flask_login import LoginManager
+from flask_login import LoginManager, current_user
 from flask_bcrypt import Bcrypt
 from flask_mail import Mail
 from flask_pymongo import PyMongo
 from config import Config
 from app.models.user_model import User
+from app.services.notification_service import get_notifications, create_notification, mark_notifications_read
 
 mongo = PyMongo()
 login_manager = LoginManager()
@@ -35,6 +36,23 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(student_bp)
+
+    @app.context_processor
+    def inject_notifications():
+
+        if current_user.is_authenticated:
+
+            notifications, unread_count = get_notifications(current_user.id)
+
+            return dict(
+                notifications=notifications,
+                unread_count=unread_count
+            )
+
+        return dict(
+            notifications=[],
+            unread_count=0
+        )
 
     return app
 

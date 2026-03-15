@@ -8,6 +8,9 @@ from datetime import datetime
 from app.decorators.role_required import role_required
 from app import bcrypt
 from flask import send_from_directory
+from app.services.notification_service import get_notifications, create_notification,  mark_notifications_read
+
+from app.routes.student_routes import submissions
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -19,11 +22,14 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 def dashboard():
     total_batches = current_app.db.batches.count_documents({})
     total_stages = current_app.db.stages.count_documents({})
+    notifications, unread_count = get_notifications(current_user.id)
 
     return render_template(
         "admin/dashboard.html",
         total_batches=total_batches,
-        total_stages=total_stages
+        total_stages=total_stages,
+        notifications=notifications,
+        unread_count=unread_count
     )
 
 
@@ -371,13 +377,51 @@ def faculty_dashboard():
     for d in deadlines:
         deadline_dict[str(d["stage_id"])] = d["deadline"]
 
+
+    total_students = len(students)
+
+    pending_reviews = 0
+    approved_count = 0
+    late_submissions = 0
+
+    for s in submissions:
+
+        if s.get("status") == "pending":
+            pending_reviews += 1
+
+        if s.get("status") == "approved":
+            approved_count += 1
+
+        if s.get("late") == True:
+            late_submissions += 1
+
+    alerts = []
+
+    if pending_reviews > 0:
+        alerts.append(f"{pending_reviews} submissions pending review")
+
+    if late_submissions > 0:
+        alerts.append(f"{late_submissions} late submissions detected")
+
+    if approved_count > 0:
+        alerts.append(f"{approved_count} submissions approved")
+    
+    notifications, unread_count = get_notifications(current_user.id)
+
     return render_template(
         "faculty/dashboard.html",
         batch=batch,
         students=students,
         stages=stages,
         submission_dict=submission_dict,
-        deadline_dict=deadline_dict
+        deadline_dict=deadline_dict,
+        total_students=total_students,
+        pending_reviews=pending_reviews,
+        approved_count=approved_count,
+        late_submissions=late_submissions,
+        alerts=alerts,
+        notifications=notifications,
+        unread_count=unread_count
     )
 
 # ---------------- STUDENT MANAGEMENT ----------------
@@ -654,6 +698,17 @@ def approve_submission(submission_id):
         }
     )
 
+    submission = current_app.db.submissions.find_one({"_id": ObjectId(submission_id)})
+
+    student_id = submission["student_id"]
+
+    stage = current_app.db.stages.find_one({"_id": submission["stage_id"]})
+
+    create_notification(
+    student_id,
+    f"{stage['name']} approved by mentor"
+    )
+
     flash("Submission approved")
     return redirect(url_for("admin.mentor_submissions"))
 
@@ -674,7 +729,18 @@ def reject_submission(submission_id):
             }
         }
     )
+   
+    submission = current_app.db.submissions.find_one({"_id": ObjectId(submission_id)})
 
+    student_id = submission["student_id"]
+
+    stage = current_app.db.stages.find_one({"_id": submission["stage_id"]})
+
+    create_notification(
+    student_id,
+    f"{stage['name']} rejected by mentor"
+    )
+    
     flash("Submission rejected")
     return redirect(url_for("admin.mentor_submissions"))
 
@@ -696,3 +762,11 @@ def download_file(filename):
         filename,
         as_attachment=False
     )
+
+@admin_bp.route("/notifications/read", methods=["POST"])
+@login_required
+def mark_notifications():
+
+    mark_notifications_read(current_user.id)
+
+    return "", 204

@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from app.decorators.role_required import role_required
 import os
 from werkzeug.utils import secure_filename
+from app.services.notification_service import create_notification, get_notifications, mark_notifications_read
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
 
@@ -123,12 +124,16 @@ def dashboard():
     if len(stages) > 0:
         progress = int((approved / len(stages)) * 100)
 
+    notifications, unread_count = get_notifications(current_user.id)
+
     return render_template(
         "student/dashboard.html",
         student=student,
         batch=batch,
         mentor=mentor,
-        progress=progress
+        progress=progress,
+        notifications=notifications,
+        unread_count=unread_count
     )
 
 
@@ -214,6 +219,31 @@ def upload_stage(stage_id):
             }
         },
         upsert=True
+    )
+
+    # ---------------- NOTIFICATION ----------------
+
+
+    student_name = student["name"]
+    stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
+    stage_name = stage["name"]
+
+    batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
+    faculty_id = batch["mentor_id"]
+
+    create_notification(
+        faculty_id,
+        f"{student_name} submitted {stage_name}"
+    )
+
+    # Late submission notification for admin
+    if late:
+
+        admin = current_app.db.users.find_one({"role": "admin"})
+
+        create_notification(
+        admin["_id"],
+        f"{student_name} submitted {stage_name} late"
     )
 
     flash("File uploaded successfully")

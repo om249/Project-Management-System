@@ -2,11 +2,51 @@
 
 {% block content %}
 
-<h2 class="page-title">Faculty Dashboard</h2>
+<h2 class="page-title">Dashboard</h2>
+
+
 
 <div class="card">
 <h4>Assigned Batch</h4>
 <p><strong>{{ batch.name }}</strong></p>
+</div>
+
+<div class="analytics-grid">
+
+{% if alerts %}
+<div class="alert-box">
+
+<h4>Notifications</h4>
+
+<ul>
+{% for alert in alerts %}
+<li>⚠ {{ alert }}</li>
+{% endfor %}
+</ul>
+
+</div>
+{% endif %}
+
+<div class="analytics-card">
+<h4>Total Students</h4>
+<p>{{ total_students }}</p>
+</div>
+
+<div class="analytics-card pending">
+<h4>Pending Reviews</h4>
+<p>{{ pending_reviews }}</p>
+</div>
+
+<div class="analytics-card approved">
+<h4>Approved</h4>
+<p>{{ approved_count }}</p>
+</div>
+
+<div class="analytics-card late">
+<h4>Late Submissions</h4>
+<p>{{ late_submissions }}</p>
+</div>
+
 </div>
 
 <div class="card">
