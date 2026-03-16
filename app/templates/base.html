@@ -32,32 +32,32 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 {% if current_user.role == "admin" %}
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('admin.dashboard') }}">
-Dashboard
+<a class="nav-link text-white {% if request.endpoint=='admin.dashboard' %}active-link{% endif %}" href="{{ url_for('admin.dashboard') }}">
+<i class="fa fa-chart-line sidebar-icon"></i> Dashboard
 </a>
 </li>
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('admin.manage_batches') }}">
-Batches
+<a class="nav-link text-white {% if request.endpoint=='admin.manage_batches' %}active-link{% endif %}" href="{{ url_for('admin.manage_batches') }}">
+<i class="fa fa-layer-group sidebar-icon"></i> Batches
 </a>
 </li>
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('admin.manage_faculty') }}">
-Faculty
+<a class="nav-link text-white {% if request.endpoint=='admin.manage_faculty' %}active-link{% endif %}" href="{{ url_for('admin.manage_faculty') }}">
+<i class="fa fa-chalkboard-teacher sidebar-icon"></i> Faculty
 </a>
 </li>
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('admin.manage_stages') }}">
-Stages
+<a class="nav-link text-white {% if request.endpoint=='admin.manage_stages' %}active-link{% endif %}" href="{{ url_for('admin.manage_stages') }}">
+<i class="fa fa-tasks sidebar-icon"></i> Stages
 </a>
 </li>
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('admin.manage_students') }}">
-Students
+<a class="nav-link text-white {% if request.endpoint=='admin.manage_students' %}active-link{% endif %}" href="{{ url_for('admin.manage_students') }}">
+<i class="fa fa-user-graduate sidebar-icon"></i> Students
 </a>
 </li>
 
@@ -66,14 +66,14 @@ Students
 {% if current_user.role == "faculty" %}
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('admin.faculty_dashboard') }}">
-Dashboard
+<a class="nav-link text-white {% if request.endpoint=='admin.faculty_dashboard' %}active-link{% endif %}" href="{{ url_for('admin.faculty_dashboard') }}">
+<i class="fa fa-chart-line sidebar-icon"></i> Dashboard
 </a>
 </li>
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('admin.mentor_submissions') }}">
-Submissions
+<a class="nav-link text-white {% if request.endpoint=='admin.mentor_submissions' %}active-link{% endif %}" href="{{ url_for('admin.mentor_submissions') }}">
+<i class="fa fa-file-alt sidebar-icon"></i> Submissions
 </a>
 </li>
 
@@ -82,14 +82,14 @@ Submissions
 {% if current_user.role == "student" %}
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('student.dashboard') }}">
-Dashboard
+<a class="nav-link text-white {% if request.endpoint=='student.dashboard' %}active-link{% endif %}" href="{{ url_for('student.dashboard') }}">
+<i class="fa fa-home sidebar-icon"></i> Dashboard
 </a>
 </li>
 
 <li class="nav-item">
-<a class="nav-link text-white" href="{{ url_for('student.submissions') }}">
-Submissions
+<a class="nav-link text-white {% if request.endpoint=='student.submissions' %}active-link{% endif %}" href="{{ url_for('student.submissions') }}">
+<i class="fa fa-upload sidebar-icon"></i> Submissions
 </a>
 </li>
 

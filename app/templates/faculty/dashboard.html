@@ -13,37 +13,23 @@
 
 <div class="analytics-grid">
 
-{% if alerts %}
-<div class="alert-box">
-
-<h4>Notifications</h4>
-
-<ul>
-{% for alert in alerts %}
-<li>⚠ {{ alert }}</li>
-{% endfor %}
-</ul>
-
-</div>
-{% endif %}
-
 <div class="analytics-card">
-<h4>Total Students</h4>
+<h4><i class="fa fa-users"></i> Total Students</h4>
 <p>{{ total_students }}</p>
 </div>
 
 <div class="analytics-card pending">
-<h4>Pending Reviews</h4>
+<h4><i class="fa fa-clock"></i> Pending Reviews</h4>
 <p>{{ pending_reviews }}</p>
 </div>
 
 <div class="analytics-card approved">
-<h4>Approved</h4>
+<h4><i class="fa fa-check-circle"></i> Approved</h4>
 <p>{{ approved_count }}</p>
 </div>
 
 <div class="analytics-card late">
-<h4>Late Submissions</h4>
+<h4><i class="fa fa-exclamation-triangle"></i> Late Submissions</h4>
 <p>{{ late_submissions }}</p>
 </div>
 

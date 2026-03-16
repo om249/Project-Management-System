@@ -1,3 +1,6 @@
+
+
+
 /* ================= GLOBAL ================= */
 body {
     margin: 0;
@@ -628,4 +631,242 @@ color:#888;
 .card{
 border-radius:10px;
 box-shadow:0 4px 10px rgba(0,0,0,0.05);
+}
+
+/* ================================
+DASHBOARD GRID
+================================ */
+
+.dashboard-grid{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:25px;
+margin-top:20px;
+}
+
+/* ================================
+ANALYTICS GRID
+================================ */
+
+.analytics-grid{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+gap:20px;
+margin:25px 0;
+}
+
+/* ================================
+ANALYTICS CARDS
+================================ */
+
+.analytics-card{
+background:white;
+padding:20px;
+border-radius:10px;
+box-shadow:0 4px 10px rgba(0,0,0,0.08);
+text-align:center;
+transition:0.2s;
+}
+
+.analytics-card:hover{
+transform:translateY(-3px);
+}
+
+.analytics-card h4{
+font-size:16px;
+margin-bottom:10px;
+}
+
+.analytics-card p{
+font-size:26px;
+font-weight:bold;
+}
+
+/* ================================
+ANALYTICS COLORS
+================================ */
+
+.analytics-card.pending{
+color:#f59e0b;
+}
+
+.analytics-card.approved{
+color:#22c55e;
+}
+
+.analytics-card.late{
+color:#ef4444;
+}
+
+/* ================================
+PROGRESS CIRCLE
+================================ */
+
+.circle-progress{
+position:relative;
+width:160px;
+margin:auto;
+}
+
+.progress-text{
+position:absolute;
+top:50%;
+left:50%;
+transform:translate(-50%,-50%);
+font-size:24px;
+font-weight:bold;
+}
+
+/* ================================
+SMALL PROGRESS CIRCLE
+================================ */
+
+.progress-circle{
+position:relative;
+width:60px;
+height:60px;
+margin:auto;
+}
+
+.circle-text{
+position:absolute;
+top:50%;
+left:50%;
+transform:translate(-50%,-50%);
+font-size:12px;
+font-weight:bold;
+}
+
+/* ================================
+CARD IMPROVEMENT
+================================ */
+
+.card{
+border-radius:12px;
+box-shadow:0 5px 15px rgba(0,0,0,0.08);
+padding:20px;
+background:white;
+}
+
+/* ================================
+TABLE STYLE
+================================ */
+
+.custom-table th{
+background:#f3f4f6;
+font-weight:600;
+}
+
+.custom-table tr:hover{
+background:#fafafa;
+}
+
+/* ================================
+RESPONSIVE
+================================ */
+
+@media(max-width:900px){
+
+.dashboard-grid{
+grid-template-columns:1fr;
+}
+
+.analytics-grid{
+grid-template-columns:1fr 1fr;
+}
+
+}
+
+/* SIDEBAR MENU */
+
+.sidebar ul{
+margin-top:20px;
+}
+
+.sidebar .nav-link{
+display:flex;
+align-items:center;
+padding:12px 18px;
+font-size:15px;
+border-radius:8px;
+transition:all 0.25s ease;
+}
+
+/* ICON SPACING */
+
+.sidebar-icon{
+margin-right:12px;
+width:20px;
+text-align:center;
+}
+
+/* HOVER EFFECT */
+
+.sidebar .nav-link:hover{
+background:rgba(255,255,255,0.08);
+transform:translateX(3px);
+}
+
+/* ACTIVE PAGE */
+
+.active-link{
+background:rgba(255,255,255,0.15);
+font-weight:600;
+}
+
+/* SIDEBAR TITLE */
+
+.sidebar h4{
+font-weight:700;
+letter-spacing:1px;
+}
+
+/* ===============================
+LOGIN PAGE
+=============================== */
+
+/* LOGIN BACKGROUND */
+
+.login-wrapper{
+height:100vh;
+display:flex;
+justify-content:center;
+align-items:center;
+
+background-image:url("../images/images.jpeg");
+background-size:cover;
+background-position:center;
+}
+
+/* GLASS LOGIN CARD */
+
+.login-card{
+width:420px;
+padding:40px;
+
+background:rgba(255,255,255,0.15);
+backdrop-filter:blur(12px);
+
+border-radius:12px;
+
+box-shadow:0 8px 30px rgba(0,0,0,0.2);
+
+text-align:center;
+
+color:#111;
+}
+
+/* LOGO */
+
+.login-logo{
+width:140px;
+margin-bottom:20px;
+}
+
+/* TITLE */
+
+.login-title{
+font-weight:600;
+margin-bottom:25px;
+color:#111;
 }
