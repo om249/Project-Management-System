@@ -6,9 +6,9 @@
 
 <div class="card">
 
-<h4>Project Stages</h4>
+<h4 class="mb-3">Project Stages</h4>
 
-<table class="custom-table">
+<table class="custom-table modern-table">
 
 <thead>
 <tr>
@@ -25,62 +25,86 @@
 
 {% for stage in stages %}
 
+{% set sub = submission_dict.get(stage._id|string) %}
+{% set deadline = deadline_dict.get(stage._id|string) %}
+
 <tr>
 
-<td>{{ stage.name }}</td>
+<td><strong>{{ stage.name }}</strong></td>
 
 <td>
-{% if deadline_dict.get(stage._id|string) %}
-{{ deadline_dict.get(stage._id|string).strftime("%Y-%m-%d") }}
+{% if deadline %}
+{{ deadline.strftime("%d %b %Y") }}
 {% else %}
-Not set
+<span class="text-muted">Not set</span>
 {% endif %}
 </td>
 
 <td>
 
+<div class="file-actions">
+
 <form method="POST"
-      action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
-      enctype="multipart/form-data"
-      class="upload-inline">
+action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
+enctype="multipart/form-data"
+class="upload-form">
 
 <input type="file" name="file" required>
 
-<button class="btn-success">Upload</button>
+<button class="btn-upload">
+<i class="fas fa-upload"></i>
+{% if sub %} Reupload {% else %} Upload {% endif %}
+</button>
 
 </form>
 
+{% if sub %}
+{% set file = sub.get('pdf_file') or sub.get('file_name') %}
+
+<button class="btn-view"
+onclick="openFileViewer('/admin/view-file/{{ file }}')">
+<i class="fas fa-eye"></i>
+View
+</button>
+{% endif %}
+
+</div>
+
 </td>
 
 <td>
+{% if sub %}
+    {% if sub.status == "approved" %}
+    <span class="badge approved">Approved</span>
 
-{% if submission_dict.get(stage._id|string) %}
-{{ submission_dict.get(stage._id|string).status }}
+```
+{% elif sub.status == "rejected" %}
+<span class="badge rejected">Rejected</span>
+
 {% else %}
-Not submitted
+<span class="badge pending">Pending</span>
+{% endif %}
+```
+
+{% else %} <span class="badge neutral">Not Submitted</span>
 {% endif %}
 
 </td>
 
 <td>
-
-{% if submission_dict.get(stage._id|string) and submission_dict.get(stage._id|string).late %} <span class="text-danger">Late</span>
+{% if sub and sub.late %}
+<span class="late-badge">Late</span>
 {% else %}
-----------
-
+<span class="text-muted">-</span>
 {% endif %}
-
 </td>
 
 <td>
-
-{% if submission_dict.get(stage._id|string) and submission_dict.get(stage._id|string).remark %}
-{{ submission_dict.get(stage._id|string).remark }}
+{% if sub and sub.remark %}
+<span class="remark-text">{{ sub.remark }}</span>
 {% else %}
-----------
-
+<span class="text-muted">-</span>
 {% endif %}
-
 </td>
 
 </tr>
@@ -92,5 +116,61 @@ Not submitted
 </table>
 
 </div>
+
+<!-- ================= FILE VIEW MODAL ================= -->
+
+<div id="fileModal" class="file-modal">
+
+<div class="file-modal-content">
+
+<span class="close-btn" onclick="closeViewer()">×</span>
+
+<iframe id="fileFrame"></iframe>
+
+<a id="downloadBtn" class="btn-download" target="_blank">Download</a>
+
+</div>
+
+</div>
+
+<!-- ================= TIMELINE ================= -->
+
+<div class="card mt-4">
+
+<h4>Submission Timeline</h4>
+
+<ul class="timeline">
+
+{% for stage in stages %}
+{% set sub = submission_dict.get(stage._id|string) %}
+
+<li>
+<strong>{{ stage.name }}</strong>
+
+{% if sub %} <span class="timeline-status {{ sub.status }}">{{ sub.status }}</span> <br> <small>{{ sub.submitted_at.strftime("%d %b %Y %H:%M") if sub.submitted_at else "" }}</small>
+{% else %} <span class="timeline-status not">Not Submitted</span>
+{% endif %}
+
+</li>
+
+{% endfor %}
+
+</ul>
+
+</div>
+
+<script>
+
+function openFileViewer(url){
+document.getElementById("fileFrame").src = url;
+document.getElementById("downloadBtn").href = url;
+document.getElementById("fileModal").style.display = "flex";
+}
+
+function closeViewer(){
+document.getElementById("fileModal").style.display = "none";
+}
+
+</script>
 
 {% endblock %}

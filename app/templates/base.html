@@ -163,6 +163,22 @@ No notifications
 
 </div>
 
+<!-- <div id="fileModal" class="file-modal">
+    <div class="file-modal-content">
+
+        <span class="close-btn" onclick="closeFileViewer()">&times;</span>
+
+        <iframe id="fileFrame" src="" frameborder="0"></iframe>
+
+        <div class="file-actions">
+            <a id="downloadBtn" href="#" download class="btn-download">
+                Download
+            </a>
+        </div>
+
+    </div>
+</div> -->
+
 {% else %}
 
 {% block auth_content %}{% endblock %}
@@ -193,6 +209,22 @@ method:"POST"
 }
 
 </script>
+
+
+<!-- <script>
+function openFileViewer(url){
+    let viewerUrl = "https://docs.google.com/gview?url=" + url + "&embedded=true";
+    
+    document.getElementById("fileFrame").src = viewerUrl;
+    document.getElementById("downloadBtn").href = url;
+    document.getElementById("fileModal").style.display = "flex";
+}
+
+function closeFileViewer(){
+    document.getElementById("fileModal").style.display = "none";
+    document.getElementById("fileFrame").src = "";
+}
+</script> -->
 
 </body>
 </html>

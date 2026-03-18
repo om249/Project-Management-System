@@ -7,6 +7,7 @@ from app.decorators.role_required import role_required
 import os
 from werkzeug.utils import secure_filename
 from app.services.notification_service import create_notification, get_notifications, mark_notifications_read
+from app.services.file_converter import convert_to_pdf
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
 
@@ -168,7 +169,8 @@ def submissions():
         "student/submissions.html",
         stages=stages,
         submission_dict=submission_dict,
-        deadline_dict=deadline_dict
+        deadline_dict=deadline_dict,
+        
     )
 
 @student_bp.route("/upload/<stage_id>", methods=["POST"])
@@ -203,8 +205,17 @@ def upload_stage(stage_id):
 
     filepath = os.path.join(upload_folder, filename)
 
+    # ✅ FIXED
     file.save(filepath)
 
+    # ✅ Convert to PDF
+    pdf_file = convert_to_pdf(filepath, upload_folder)
+
+    if not pdf_file:
+        flash("File conversion failed. Upload PDF or check system.")
+        return redirect(url_for("student.dashboard"))
+
+    # ✅ STORE pdf_file ALSO
     current_app.db.submissions.update_one(
         {
             "student_id": ObjectId(current_user.id),
@@ -213,6 +224,7 @@ def upload_stage(stage_id):
         {
             "$set": {
                 "file_name": filename,
+                "pdf_file": pdf_file,   # 🔥 IMPORTANT
                 "submitted_at": now,
                 "status": "pending",
                 "late": late
@@ -223,8 +235,8 @@ def upload_stage(stage_id):
 
     # ---------------- NOTIFICATION ----------------
 
-
     student_name = student["name"]
+
     stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
     stage_name = stage["name"]
 
@@ -238,13 +250,12 @@ def upload_stage(stage_id):
 
     # Late submission notification for admin
     if late:
-
         admin = current_app.db.users.find_one({"role": "admin"})
 
         create_notification(
-        admin["_id"],
-        f"{student_name} submitted {stage_name} late"
-    )
+            admin["_id"],
+            f"{student_name} submitted {stage_name} late"
+        )
 
     flash("File uploaded successfully")
 

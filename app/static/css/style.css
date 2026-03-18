@@ -103,6 +103,11 @@ body {
     background-color: #f9fafb;
 }
 
+.custom-table td i {
+margin-right: 6px;
+color: #6b7280;
+}
+
 /* ================= BUTTONS ================= */
 .btn-primary-custom {
     background-color: #2563eb;
@@ -258,19 +263,19 @@ font-size:13px;
 font-weight:600;
 }
 
-.status-badge.pending{
-background:#fff3cd;
-color:#856404;
+.status-badge.approved {
+background: #dcfce7;
+color: #166534;
 }
 
-.status-badge.approved{
-background:#d4edda;
-color:#155724;
+.status-badge.rejected {
+background: #fee2e2;
+color: #991b1b;
 }
 
-.status-badge.rejected{
-background:#f8d7da;
-color:#721c24;
+.status-badge.pending {
+background: #fef3c7;
+color: #92400e;
 }
 
 .btn-success{
@@ -346,7 +351,7 @@ margin-top:10px;
 }
 
 
-.btn-approve{
+/* .btn-approve{
 background:#16a34a;
 color:white;
 border:none;
@@ -365,6 +370,23 @@ border-radius:6px;
 cursor:pointer;
 font-size:13px;
 margin-left:6px;
+} */
+
+
+.btn-approve {
+background: #22c55e;
+color: white;
+padding: 6px 10px;
+border-radius: 6px;
+border: none;
+}
+
+.btn-reject {
+background: #ef4444;
+color: white;
+padding: 6px 10px;
+border-radius: 6px;
+border: none;
 }
 
 .action-buttons{
@@ -832,10 +854,11 @@ height:100vh;
 display:flex;
 justify-content:center;
 align-items:center;
-
-background-image:url("../images/images.jpeg");
+background: linear-gradient(135deg, #e8f5e0, #9FE1CB, #1D9E75, #85B7EB);
+/* background-color: red; */
+/* background-image:url("../images/images.jpeg");
 background-size:cover;
-background-position:center;
+background-position:center; */
 }
 
 /* GLASS LOGIN CARD */
@@ -869,4 +892,391 @@ margin-bottom:20px;
 font-weight:600;
 margin-bottom:25px;
 color:#111;
+}
+
+
+/* ================= FILE MODAL ================= */
+
+.file-modal {
+display: none;
+position: fixed;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+background: rgba(0,0,0,0.6);
+justify-content: center;
+align-items: center;
+z-index: 9999;
+}
+
+.file-modal-content {
+background: #fff;
+width: 80%;
+max-width: 900px;
+border-radius: 10px;
+padding: 20px;
+position: relative;
+}
+
+.close-btn {
+position: absolute;
+top: 10px;
+right: 15px;
+font-size: 22px;
+cursor: pointer;
+}
+
+.file-footer {
+text-align: right;
+margin-top: 10px;
+}
+
+.btn-download {
+background: #2563eb;
+color: white;
+padding: 8px 16px;
+border-radius: 6px;
+text-decoration: none;
+}
+
+.btn-download:hover {
+background: #1e40af;
+}
+
+/* ================= BUTTON STYLING ================= */
+
+button, .btn, .btn-view{
+transition:all 0.3s ease;
+}
+
+/* VIEW BUTTON */
+/* .btn-view{
+background:#3b82f6;
+color:#fff;
+border:none;
+padding:8px 14px;
+border-radius:6px;
+cursor:pointer;
+}
+
+.btn-view:hover{
+background:#1d4ed8;
+transform:scale(1.05);
+} */
+
+.btn-view {
+background: #3b82f6;
+color: white;
+padding: 6px 12px;
+border-radius: 6px;
+border: none;
+}
+
+.btn-view:hover {
+background: #2563eb;
+}
+
+/* GENERAL BUTTON HOVER */
+.btn:hover{
+transform:translateY(-2px);
+box-shadow:0 4px 12px rgba(0,0,0,0.2);
+}
+
+
+/* ===== MODERN TABLE ===== */
+
+.modern-table {
+width: 100%;
+border-collapse: collapse;
+}
+
+.modern-table thead {
+background: #f1f5f9;
+}
+
+.modern-table th {
+padding: 12px;
+font-size: 14px;
+text-align: left;
+color: #374151;
+}
+
+.modern-table td {
+padding: 12px;
+border-top: 1px solid #e5e7eb;
+vertical-align: middle;
+}
+
+/* ROW HOVER */
+.modern-table tr:hover {
+background: #f9fafb;
+}
+
+/* STAGE NAME */
+.stage-name {
+font-size: 15px;
+}
+
+/* DEADLINE */
+.deadline-date {
+font-size: 13px;
+color: #6b7280;
+}
+
+/* UPLOAD */
+.upload-form {
+display: flex;
+gap: 8px;
+align-items: center;
+}
+
+.upload-form input {
+font-size: 12px;
+}
+
+.btn-upload {
+background: #2563eb;
+color: white;
+border: none;
+padding: 6px 10px;
+border-radius: 6px;
+cursor: pointer;
+}
+
+.btn-upload:hover {
+background: #1e40af;
+}
+
+/* BADGES */
+.badge {
+padding: 4px 10px;
+border-radius: 20px;
+font-size: 12px;
+font-weight: 500;
+}
+
+.badge.approved {
+background: #dcfce7;
+color: #166534;
+}
+
+.badge.rejected {
+background: #fee2e2;
+color: #991b1b;
+}
+
+.badge.pending {
+background: #fef3c7;
+color: #92400e;
+}
+
+.badge.neutral {
+background: #e5e7eb;
+color: #374151;
+}
+
+/* LATE */
+.late-badge {
+color: #ef4444;
+font-weight: bold;
+font-size: 13px;
+}
+
+/* REMARK */
+.remark-text {
+font-size: 13px;
+color: #374151;
+}
+
+/* ===== TABLE ===== */
+.modern-table td, .modern-table th {
+padding: 12px;
+}
+
+/* ===== UPLOAD ===== */
+.upload-form {
+display: flex;
+gap: 8px;
+align-items: center;
+}
+
+.btn-upload {
+background: #2563eb;
+color: white;
+padding: 5px 10px;
+border-radius: 6px;
+border: none;
+cursor: pointer;
+}
+
+.btn-upload:hover {
+background: #1e40af;
+}
+
+/* ===== VIEW BUTTON ===== */
+.btn-view {
+background: #10b981;
+color: white;
+padding: 5px 10px;
+border-radius: 6px;
+border: none;
+margin-top: 5px;
+cursor: pointer;
+}
+
+.btn-view:hover {
+background: #059669;
+}
+
+/* ===== BADGES ===== */
+.badge {
+padding: 4px 10px;
+border-radius: 20px;
+font-size: 12px;
+}
+
+.badge.approved { background:#dcfce7; color:#166534; }
+.badge.rejected { background:#fee2e2; color:#991b1b; }
+.badge.pending { background:#fef3c7; color:#92400e; }
+.badge.neutral { background:#e5e7eb; }
+
+/* ===== LATE ===== */
+.late-badge {
+color: red;
+font-weight: bold;
+}
+
+/* ===== MODAL ===== */
+.file-modal {
+display: none;
+position: fixed;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+background: rgba(0,0,0,0.6);
+justify-content: center;
+align-items: center;
+z-index: 999;
+}
+
+.file-modal-content {
+background: white;
+width: 80%;
+height: 80%;
+border-radius: 10px;
+position: relative;
+padding: 10px;
+}
+
+#fileFrame {
+width: 100%;
+height: 90%;
+border: none;
+}
+
+.close-btn {
+position: absolute;
+top: 10px;
+right: 15px;
+cursor: pointer;
+font-size: 20px;
+}
+
+.btn-download {
+position: absolute;
+bottom: 10px;
+right: 10px;
+background: #2563eb;
+color: white;
+padding: 6px 12px;
+border-radius: 6px;
+text-decoration: none;
+}
+
+/* ===== TIMELINE ===== */
+.timeline {
+list-style: none;
+padding-left: 0;
+}
+
+.timeline li {
+padding: 10px 0;
+border-left: 3px solid #2563eb;
+margin-left: 10px;
+padding-left: 10px;
+position: relative;
+}
+
+.timeline li::before {
+content: "";
+position: absolute;
+left: -7px;
+top: 15px;
+width: 12px;
+height: 12px;
+background: #2563eb;
+border-radius: 50%;
+}
+
+.timeline-status.approved { color: green; }
+.timeline-status.pending { color: orange; }
+.timeline-status.rejected { color: red; }
+.timeline-status.not { color: gray; }
+
+
+/* ===== FILE ACTIONS ===== */
+.file-actions {
+display: flex;
+align-items: center;
+gap: 10px;
+flex-wrap: wrap;
+}
+
+/* ===== UPLOAD ===== */
+.upload-form {
+display: flex;
+align-items: center;
+gap: 8px;
+}
+
+.upload-form input {
+font-size: 12px;
+}
+
+/* ===== BUTTON BASE ===== */
+.btn-upload,
+.btn-view {
+display: inline-flex;
+align-items: center;
+gap: 6px;
+padding: 6px 12px;
+border-radius: 6px;
+font-size: 13px;
+border: none;
+cursor: pointer;
+transition: 0.2s;
+}
+
+/* ===== UPLOAD BUTTON ===== */
+.btn-upload {
+background: #2563eb;
+color: white;
+}
+
+.btn-upload:hover {
+background: #1e40af;
+transform: translateY(-1px);
+}
+
+/* ===== VIEW BUTTON ===== */
+.btn-view {
+background: #10b981;
+color: white;
+}
+
+.btn-view:hover {
+background: #059669;
+transform: translateY(-1px);
 }
