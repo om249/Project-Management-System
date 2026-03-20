@@ -1,3 +1,6 @@
+import email
+from unittest import result
+
 from numpy import rint
 import pandas as pd
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify
@@ -9,7 +12,7 @@ from app.decorators.role_required import role_required
 from app import bcrypt
 from flask import send_from_directory
 from app.services.notification_service import get_notifications, create_notification,  mark_notifications_read
-
+from app.services.email_service import send_email, student_welcome_email, submission_email, late_submission_email, status_email
 from app.routes.student_routes import submissions
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -167,6 +170,15 @@ def assign_mentor():
         {"_id": ObjectId(batch_id)},
         {"$set": {"mentor_id": ObjectId(mentor_id)}}
     )
+
+    mentor = current_app.db.users.find_one({"_id": ObjectId(mentor_id)})
+
+    if mentor:
+        send_email(
+            mentor["email"],
+            "Batch Assigned",
+            f"<h3>You have been assigned to batch: {batch['name']}</h3>"
+        )
 
     flash("Mentor updated successfully.")
     return redirect(url_for("admin.manage_batches"))
@@ -431,6 +443,7 @@ def faculty_dashboard():
 def manage_students():
 
     students = list(current_app.db.students.find())
+    # print("STUDENTS:", students)
 
     batches = list(current_app.db.batches.find())
 
@@ -443,6 +456,50 @@ def manage_students():
         batches=batches
     )
 
+# @admin_bp.route("/add-student", methods=["POST"])
+# @login_required
+# @role_required("admin")
+# def add_student():
+
+#     name = request.form["name"]
+#     prn = request.form["prn"]
+#     batch_id = request.form["batch_id"]
+
+#     existing = current_app.db.students.find_one({"prn": prn})
+
+#     if existing:
+#         flash("Student already exists")
+#         return redirect(url_for("admin.manage_students"))
+
+#     raw_password = prn
+#     password = bcrypt.generate_password_hash(raw_password).decode("utf-8")
+
+#     # 🔥 CREATE STUDENT OBJECT
+#     student_data = {
+#         "name": name,
+#         "prn": prn,
+#         "email": "",  # optional
+#         "password": password,
+#         "batch_id": ObjectId(batch_id),
+#         "role": "student",
+#         "password_changed": False,
+#         "created_at": datetime.utcnow()
+#     }
+
+#     current_app.db.students.insert_one(student_data)
+
+#     # 🔥 SEND EMAIL (if email exists)
+#     if student_data["email"]:
+#         send_email(
+#             student_data["email"],
+#             "Welcome to ZIBACAR",
+#             student_welcome_email(name, prn, raw_password)
+#         )
+
+#     flash("Student added successfully")
+#     return redirect(url_for("admin.manage_students"))
+
+
 @admin_bp.route("/add-student", methods=["POST"])
 @login_required
 @role_required("admin")
@@ -450,6 +507,8 @@ def add_student():
 
     name = request.form["name"]
     prn = request.form["prn"]
+    email = request.form["email"].strip().replace(" ", "")
+    year = request.form["year"]
     batch_id = request.form["batch_id"]
 
     existing = current_app.db.students.find_one({"prn": prn})
@@ -458,20 +517,46 @@ def add_student():
         flash("Student already exists")
         return redirect(url_for("admin.manage_students"))
 
-    password = bcrypt.generate_password_hash(prn).decode("utf-8")
+    existing_email = current_app.db.students.find_one({"email": email})
 
-    current_app.db.students.insert_one({
+    if existing_email:
+        flash("Email already exists", "warning")
+        return redirect(url_for("admin.manage_students"))
+
+    # ✅ ALWAYS DEFINE BEFORE USING
+    raw_password = prn
+    password = bcrypt.generate_password_hash(raw_password).decode("utf-8")
+
+    student_data = {
         "name": name,
         "prn": prn,
-        "password": password,
+        "email": email,
+        "year": year,
         "batch_id": ObjectId(batch_id),
+        "role": "student",
+        "password": password,
         "password_changed": False,
         "created_at": datetime.utcnow()
-    })
+    }
+
+    # ✅ INSERT
+    result = current_app.db.students.insert_one(student_data)
+    print("INSERTED:", result.inserted_id)
+
+    # ✅ EMAIL (SAFE)
+    try:
+        send_email(
+            email,
+            "Welcome to ZIBACAR",
+            student_welcome_email(name, prn, raw_password)
+        )
+    except Exception as e:
+        print("EMAIL ERROR:", e)
 
     flash("Student added successfully")
 
     return redirect(url_for("admin.manage_students"))
+
 
 # ===================== UPLOAD STUDENTS =====================
 @admin_bp.route("/upload-students", methods=["POST"])
@@ -483,53 +568,96 @@ def upload_students():
 
     df = pd.read_excel(file)
 
+    # for _, row in df.iterrows():
+
+    #     prn = str(row["PRN"]).strip()
+    #     name = str(row["Name"]).strip()
+    #     year = str(row["Year"]).strip()
+
+    #     # email may or may not exist in excel
+    #     email = row.get("Email", "")
+
+    #     existing = current_app.db.students.find_one({"prn": prn})
+
+    #     password = bcrypt.generate_password_hash(prn).decode("utf-8")
+
+    #     if existing:
+
+    #         # FIX old records missing role/password
+    #         current_app.db.students.update_one(
+    #             {"_id": existing["_id"]},
+    #             {
+    #                 "$set": {
+    #                     "name": name,
+    #                     "year": year,
+    #                     "email": email,
+    #                     "role": "student",
+    #                     "password": password,
+    #                     "password_changed": False
+    #                 }
+    #             }
+    #         )
+
+    #     else:
+
+    #         current_app.db.students.insert_one({
+
+    #             "prn": prn,
+    #             "name": name,
+    #             "email": email,
+    #             "year": year,
+    #             "batch_id": None,
+
+    #             "role": "student",
+    #             "password": password,
+    #             "password_changed": False,
+
+    #             "created_at": datetime.utcnow()
+
+    #         })
+
+    #         # 🔥 SEND EMAIL IF EMAIL EXISTS
+    #         if email:
+    #             send_email(
+    #                 email,
+    #                 "Welcome to ZIBACAR",
+    #                 student_welcome_email(name, prn, raw_password)
+    #             )  
+
+
     for _, row in df.iterrows():
 
         prn = str(row["PRN"]).strip()
         name = str(row["Name"]).strip()
+        email = str(row["Email"]).strip()
         year = str(row["Year"]).strip()
-
-        # email may or may not exist in excel
-        email = row.get("Email", "")
 
         existing = current_app.db.students.find_one({"prn": prn})
 
+        raw_password = prn
         password = bcrypt.generate_password_hash(prn).decode("utf-8")
 
         if existing:
+            continue
 
-            # FIX old records missing role/password
-            current_app.db.students.update_one(
-                {"_id": existing["_id"]},
-                {
-                    "$set": {
-                        "name": name,
-                        "year": year,
-                        "email": email,
-                        "role": "student",
-                        "password": password,
-                        "password_changed": False
-                    }
-                }
-            )
+        current_app.db.students.insert_one({
+            "prn": prn,
+            "name": name,
+            "email": email,
+            "year": year,
+            "batch_id": None,
+            "role": "student",
+            "password": password,
+            "password_changed": False,
+            "created_at": datetime.utcnow()
+        })
 
-        else:
-
-            current_app.db.students.insert_one({
-
-                "prn": prn,
-                "name": name,
-                "email": email,
-                "year": year,
-                "batch_id": None,
-
-                "role": "student",
-                "password": password,
-                "password_changed": False,
-
-                "created_at": datetime.utcnow()
-
-            })
+        # ✅ SEND EMAIL
+        send_email(
+            email,
+            "Welcome to ZIBACAR",
+            student_welcome_email(name, prn, raw_password)
+        )
 
     flash("Students uploaded successfully")
 
@@ -543,7 +671,8 @@ def download_template():
     df = pd.DataFrame({
         "PRN": [],
         "Name": [],
-        "Batch": []
+        "Email": [],
+        "Year": []
     })
 
     path = "student_template.xlsx"
@@ -709,6 +838,15 @@ def approve_submission(submission_id):
     f"{stage['name']} approved by mentor"
     )
 
+    student = current_app.db.students.find_one({"_id": student_id})
+
+    if student and student.get("email"):
+        send_email(
+            student["email"],
+            "Submission Approved",
+            status_email(stage["name"], "Approved", remark)
+        )  
+
     flash("Submission approved")
     return redirect(url_for("admin.mentor_submissions"))
 
@@ -740,6 +878,15 @@ def reject_submission(submission_id):
     student_id,
     f"{stage['name']} rejected by mentor"
     )
+
+    student = current_app.db.students.find_one({"_id": student_id})
+
+    if student and student.get("email"):
+        send_email(
+            student["email"],
+            "Submission Rejected",
+            status_email(stage["name"], "Rejected", remark)
+        )
     
     flash("Submission rejected")
     return redirect(url_for("admin.mentor_submissions"))

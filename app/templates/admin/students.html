@@ -7,23 +7,37 @@
 
 <h4>Add Student</h4>
 
-<form method="POST" action="{{ url_for('admin.add_student') }}" class="inline-form">
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+    <div class="flash-container">
+        {% for category, message in messages %}
+            <div class="flash-message {{ category }}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+{% endwith %}
 
-<input type="text" name="name" placeholder="Student Name" required>
 
-<input type="text" name="prn" placeholder="PRN" required>
+<form method="POST" action="{{ url_for('admin.add_student') }}" class="add-student-form">
 
-<select name="batch_id" required>
+    <input type="text" name="name" placeholder="Student Name" required>
 
-<option value="">Select Batch</option>
+    <input type="text" name="prn" placeholder="PRN" required>
 
-{% for batch in batches %}
-<option value="{{ batch._id }}">{{ batch.name }}</option>
-{% endfor %}
+    <input type="email" name="email" placeholder="Email" required>
 
-</select>
+    <input type="text" name="year" placeholder="Year (e.g. 2025-27)" required>
 
-<button class="btn-success">Add</button>
+    <select name="batch_id" required>
+        <option value="">Select Batch</option>
+        {% for batch in batches %}
+        <option value="{{ batch._id }}">{{ batch.name }}</option>
+        {% endfor %}
+    </select>
+
+    <button type="submit" class="btn-add">Add</button>
 
 </form>
 
@@ -56,8 +70,7 @@
 Upload Students
 </button>
 
-<a href="{{ url_for('static', filename='templates/student_template.xlsx') }}"
-   class="template-link">
+<a href="{{ url_for('admin.download_template') }}" class="template-link">
 Download Template
 </a>
 
@@ -78,6 +91,7 @@ Download Template
 <tr>
 <th>PRN</th>
 <th>Name</th>
+<th>Email</th>
 <th>Year</th>
 </tr>
 </thead>
@@ -89,6 +103,7 @@ Download Template
 
 <td>{{ s.prn }}</td>
 <td>{{ s.name }}</td>
+<td>{{ s.email }}</td>
 <td>{{ s.year }}</td>
 
 </tr>

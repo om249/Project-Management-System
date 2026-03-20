@@ -6,8 +6,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from app.decorators.role_required import role_required
 import os
 from werkzeug.utils import secure_filename
+from app.services.email_service import late_submission_email
 from app.services.notification_service import create_notification, get_notifications, mark_notifications_read
 from app.services.file_converter import convert_to_pdf
+from app.services.email_service import send_email, submission_email, late_submission_email
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
 
@@ -256,7 +258,14 @@ def upload_stage(stage_id):
             admin["_id"],
             f"{student_name} submitted {stage_name} late"
         )
-
+ 
+    if admin and admin.get("email"):
+        send_email(
+            admin["email"],
+            "Late Submission Alert",
+            late_submission_email(student_name, stage_name)
+        )
+        
     flash("File uploaded successfully")
 
     return redirect(url_for("student.dashboard"))
