@@ -1,5 +1,6 @@
 import smtplib
 from email.mime.text import MIMEText
+from bson import ObjectId
 from flask import current_app
 
 
@@ -70,3 +71,25 @@ def status_email(stage, status, remark=""):
 
     <p><b>Remark:</b> {remark}</p>
     """
+
+def assign_mentor():
+    # 🔥 SEND EMAIL TO ALL STUDENTS IN BATCH
+    students = current_app.db.students.find({"batch_id": ObjectId(batch_id)})
+
+    mentor = current_app.db.users.find_one({"_id": ObjectId(mentor_id)})
+
+    for s in students:
+        if s.get("email"):
+            try:
+                send_email(
+                    s["email"],
+                    "Mentor Assigned",
+                    f"""
+                    <h3>Mentor Assigned</h3>
+                    <p>Hello {s['name']},</p>
+                    <p>Your mentor is <b>{mentor['name']}</b></p>
+                    <p>Email: {mentor['email']}</p>
+                    """
+                )
+            except Exception as e:
+                print("Email error:", e)

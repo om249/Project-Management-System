@@ -1,9 +1,15 @@
 from datetime import datetime
+from bson import ObjectId
 from flask import current_app
 
+
+# ================= CREATE =================
 def create_notification(user_id, message, type="info"):
 
     db = current_app.db
+
+    # ✅ ensure ObjectId
+    user_id = ObjectId(user_id)
 
     db.notifications.insert_one({
         "user_id": user_id,
@@ -13,7 +19,7 @@ def create_notification(user_id, message, type="info"):
         "created_at": datetime.utcnow()
     })
 
-    # keep only latest 5 notifications
+    # ✅ keep only latest 5
     notifications = list(
         db.notifications.find({"user_id": user_id})
         .sort("created_at", -1)
@@ -23,9 +29,13 @@ def create_notification(user_id, message, type="info"):
         for old in notifications[5:]:
             db.notifications.delete_one({"_id": old["_id"]})
 
+
+# ================= GET =================
 def get_notifications(user_id):
 
     db = current_app.db
+
+    user_id = ObjectId(user_id)
 
     notifications = list(
         db.notifications.find({"user_id": user_id})
@@ -40,9 +50,12 @@ def get_notifications(user_id):
     return notifications, unread
 
 
+# ================= MARK READ =================
 def mark_notifications_read(user_id):
 
     db = current_app.db
+
+    user_id = ObjectId(user_id)
 
     db.notifications.update_many(
         {"user_id": user_id},

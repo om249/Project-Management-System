@@ -180,6 +180,27 @@ def assign_mentor():
             f"<h3>You have been assigned to batch: {batch['name']}</h3>"
         )
 
+    students = list(current_app.db.students.find({"batch_id": ObjectId(batch_id)}))
+
+    print("STUDENTS FOUND:", students)
+
+    for s in students:
+        if s.get("email"):
+            print("SENDING EMAIL:", s["email"])
+
+            try:
+                send_email(
+                    s["email"],
+                    "Mentor Assigned",
+                    f"""
+                    <h3>Mentor Assigned</h3>
+                    <p>Hello {s['name']},</p>
+                    <p>Your mentor is <b>{mentor['name']}</b></p>
+                    """
+                )
+            except Exception as e:
+                print("EMAIL ERROR:", e)
+
     flash("Mentor updated successfully.")
     return redirect(url_for("admin.manage_batches"))
 
@@ -566,8 +587,8 @@ def upload_students():
 
     file = request.files["file"]
 
-    df = pd.read_excel(file)
-
+    # df = pd.read_excel(file)
+    # df.columns = df.columns.str.strip().str.lower()  # remove any leading/trailing spaces from column names
     # for _, row in df.iterrows():
 
     #     prn = str(row["PRN"]).strip()
@@ -625,19 +646,35 @@ def upload_students():
     #             )  
 
 
+    df = pd.read_excel(file)
+
+    print("COLUMNS:", df.columns)
+    print(df.head())
+
     for _, row in df.iterrows():
 
-        prn = str(row["PRN"]).strip()
-        name = str(row["Name"]).strip()
-        email = str(row["Email"]).strip()
-        year = str(row["Year"]).strip()
+        # ✅ ACCESS BY POSITION (SAFE)
+        prn = str(row.iloc[0]).strip()
+        name = str(row.iloc[1]).strip()
+        email = str(row.iloc[2]).strip() if len(row) > 2 else ""
+        year = str(row.iloc[3]).strip() if len(row) > 3 else ""
+
+        print("PROCESSING:", prn, name)
+
+        # ❌ Skip empty rows
+        if not prn or prn.lower() == "nan":
+            continue
+
+        if not name or name.lower() == "nan":
+            continue
+
+        raw_password = prn
+        password = bcrypt.generate_password_hash(raw_password).decode("utf-8")
 
         existing = current_app.db.students.find_one({"prn": prn})
 
-        raw_password = prn
-        password = bcrypt.generate_password_hash(prn).decode("utf-8")
-
         if existing:
+            print("SKIPPED:", prn)
             continue
 
         current_app.db.students.insert_one({
@@ -652,12 +689,7 @@ def upload_students():
             "created_at": datetime.utcnow()
         })
 
-        # ✅ SEND EMAIL
-        send_email(
-            email,
-            "Welcome to ZIBACAR",
-            student_welcome_email(name, prn, raw_password)
-        )
+        print("INSERTED:", prn)
 
     flash("Students uploaded successfully")
 
@@ -741,6 +773,86 @@ def save_assigned_students(batch_id):
             {"_id": ObjectId(sid)},
             {"$set": {"batch_id": ObjectId(batch_id)}}
         )
+ 
+    batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
+
+    mentor = None
+    
+    if batch and batch.get("mentor_id"):
+        mentor = current_app.db.users.find_one({"_id": batch["mentor_id"]})
+
+        # print("MENTOR:", mentor)
+
+    for sid in student_ids:
+
+        student = current_app.db.students.find_one({"_id": ObjectId(sid)})
+
+        print("STUDENT:", student)
+
+        if student and student.get("email") and mentor:
+
+            print("SENDING EMAIL TO:", student["email"])
+
+            try:
+                send_email(
+                    student["email"],
+                    "Mentor Assigned",
+                    f"""
+                    <h3>Mentor Assigned</h3>
+                    <p>Hello {student['name']},</p>
+                    <p>Your mentor is <b>{mentor['name']}</b></p>
+                    <p>Email: {mentor['email']}</p>
+                    """
+                )
+            except Exception as e:
+                print("EMAIL ERROR:", e)
+
+
+    # ================= SEND EMAIL TO FACULTY =================
+
+    batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
+
+    if batch and batch.get("mentor_id"):
+
+        mentor = current_app.db.users.find_one({"_id": batch["mentor_id"]})
+
+        if mentor and mentor.get("email"):
+
+            # Get assigned students
+            assigned_students = list(current_app.db.students.find({
+                "batch_id": ObjectId(batch_id)
+            }))
+
+            # Build student list HTML
+            student_list_html = ""
+
+            for s in assigned_students:
+                student_list_html += f"<li>{s['name']} ({s['prn']})</li>"
+
+            try:
+                send_email(
+                    mentor["email"],
+                    "Students Assigned to You",
+                    f"""
+                    <h3>Students Assigned</h3>
+
+                    <p>Hello {mentor['name']},</p>
+
+                    <p>You have been assigned the following students:</p>
+
+                    <ul>
+                        {student_list_html}
+                    </ul>
+
+                    <p><b>Batch:</b> {batch['name']}</p>
+                    """
+                )
+
+                print("FACULTY EMAIL SENT:", mentor["email"])
+
+            except Exception as e:
+                print("EMAIL ERROR (FACULTY):", e)
+
 
     flash("Students assigned successfully")
 
@@ -841,11 +953,14 @@ def approve_submission(submission_id):
     student = current_app.db.students.find_one({"_id": student_id})
 
     if student and student.get("email"):
-        send_email(
-            student["email"],
-            "Submission Approved",
-            status_email(stage["name"], "Approved", remark)
-        )  
+        try:
+            send_email(
+                student["email"],
+                "Submission Approved",
+                status_email(stage["name"], "Approved", remark)
+            )
+        except Exception as e:
+            print("Email error:", e)
 
     flash("Submission approved")
     return redirect(url_for("admin.mentor_submissions"))
@@ -882,11 +997,14 @@ def reject_submission(submission_id):
     student = current_app.db.students.find_one({"_id": student_id})
 
     if student and student.get("email"):
-        send_email(
-            student["email"],
-            "Submission Rejected",
-            status_email(stage["name"], "Rejected", remark)
-        )
+        try:
+            send_email(
+                student["email"],
+                "Submission Rejected",
+                status_email(stage["name"], "Rejected", remark)
+            )
+        except Exception as e:
+            print("Email error:", e)
     
     flash("Submission rejected")
     return redirect(url_for("admin.mentor_submissions"))

@@ -10,6 +10,7 @@ from app.services.email_service import late_submission_email
 from app.services.notification_service import create_notification, get_notifications, mark_notifications_read
 from app.services.file_converter import convert_to_pdf
 from app.services.email_service import send_email, submission_email, late_submission_email
+from datetime import datetime, timedelta
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
 
@@ -129,6 +130,27 @@ def dashboard():
 
     notifications, unread_count = get_notifications(current_user.id)
 
+    today = datetime.utcnow()
+
+    for stage in stages:
+        deadline = current_app.db.deadlines.find_one({
+            "batch_id": batch["_id"],
+            "stage_id": stage["_id"]
+        })
+
+        if deadline:
+            days_left = (deadline["deadline"] - today).days
+
+            if days_left == 2:
+                try:
+                    send_email(
+                        student["email"],
+                        "Deadline Reminder",
+                        f"<p>{stage['name']} deadline is in 2 days</p>"
+                    )
+                except:
+                    pass
+
     return render_template(
         "student/dashboard.html",
         student=student,
@@ -175,6 +197,131 @@ def submissions():
         
     )
 
+# @student_bp.route("/upload/<stage_id>", methods=["POST"])
+# @login_required
+# @role_required("student")
+# def upload_stage(stage_id):
+
+#     student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
+
+#     batch_id = student["batch_id"]
+
+#     deadline_doc = current_app.db.deadlines.find_one({
+#         "batch_id": batch_id,
+#         "stage_id": ObjectId(stage_id)
+#     })
+
+#     deadline = deadline_doc["deadline"] if deadline_doc else None
+
+#     now = datetime.utcnow()
+
+#     late = False
+#     if deadline and now > deadline:
+#         late = True
+
+#     file = request.files["file"]
+#     filename = secure_filename(file.filename)
+
+#     upload_folder = current_app.config["UPLOAD_FOLDER"]
+
+#     if not os.path.exists(upload_folder):
+#         os.makedirs(upload_folder)
+
+#     filepath = os.path.join(upload_folder, filename)
+
+#     # ✅ FIXED
+#     file.save(filepath)
+
+#     # ✅ Convert to PDF
+#     pdf_file = convert_to_pdf(filepath, upload_folder)
+
+#     if not pdf_file:
+#         flash("File conversion failed. Upload PDF or check system.")
+#         return redirect(url_for("student.dashboard"))
+
+#     # ✅ STORE pdf_file ALSO
+#     current_app.db.submissions.update_one(
+#         {
+#             "student_id": ObjectId(current_user.id),
+#             "stage_id": ObjectId(stage_id)
+#         },
+#         {
+#             "$set": {
+#                 "file_name": filename,
+#                 "pdf_file": pdf_file,   # 🔥 IMPORTANT
+#                 "submitted_at": now,
+#                 "status": "pending",
+#                 "late": late
+#             }
+#         },
+#         upsert=True
+#     )
+
+#     # ---------------- NOTIFICATION ----------------
+
+#     student_name = student["name"]
+
+#     stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
+#     stage_name = stage["name"]
+
+#     batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
+#     faculty_id = batch["mentor_id"]
+
+#     create_notification(
+#         faculty_id,
+#         f"{student_name} submitted {stage_name}"
+#     )
+
+#     # Late submission notification for admin
+#     if late:
+#         admin = current_app.db.users.find_one({"role": "admin"})
+
+#         if admin:
+#             create_notification(
+#                 admin["_id"],
+#                 f"{student_name} submitted {stage_name} late"
+#             )
+ 
+#     if admin and admin.get("email"):
+#         send_email(
+#             admin["email"],
+#             "Late Submission Alert",
+#             late_submission_email(student_name, stage_name)
+#         )
+
+#     faculty = current_app.db.users.find_one({"_id": faculty_id})
+
+#     if faculty and faculty.get("email"):
+#         try:
+#             send_email(
+#                 faculty["email"],
+#                 "New Submission",
+#                 submission_email(student_name, stage_name)
+#             )
+#         except Exception as e:
+#             print("Email error:", e)
+#         except Exception as e:
+#             print("Email error:", e)
+
+# # Late submission email to admin
+#     if late:
+#         admin = current_app.db.users.find_one({"role": "admin"})
+
+#         if admin and admin.get("email"):
+#             try:
+#                 send_email(
+#                     admin["email"],
+#                     "Late Submission Alert",
+#                     late_submission_email(student_name, stage_name)
+#                 )
+#             except Exception as e:
+#                 print("Email error:", e)
+        
+#     flash("File uploaded successfully")
+
+#     return redirect(url_for("student.dashboard"))
+
+
 @student_bp.route("/upload/<stage_id>", methods=["POST"])
 @login_required
 @role_required("student")
@@ -184,19 +331,20 @@ def upload_stage(stage_id):
 
     batch_id = student["batch_id"]
 
+    # -------- DEADLINE CHECK --------
     deadline_doc = current_app.db.deadlines.find_one({
         "batch_id": batch_id,
         "stage_id": ObjectId(stage_id)
     })
 
     deadline = deadline_doc["deadline"] if deadline_doc else None
-
     now = datetime.utcnow()
 
     late = False
     if deadline and now > deadline:
         late = True
 
+    # -------- FILE UPLOAD --------
     file = request.files["file"]
     filename = secure_filename(file.filename)
 
@@ -205,28 +353,22 @@ def upload_stage(stage_id):
     if not os.path.exists(upload_folder):
         os.makedirs(upload_folder)
 
-    filepath = os.path.join(upload_folder, filename)
+    file_path = os.path.join(upload_folder, filename)
+    file.save(file_path)
 
-    # ✅ FIXED
-    file.save(filepath)
+    # -------- CONVERT TO PDF --------
+    pdf_file = convert_to_pdf(file_path, upload_folder)
 
-    # ✅ Convert to PDF
-    pdf_file = convert_to_pdf(filepath, upload_folder)
-
-    if not pdf_file:
-        flash("File conversion failed. Upload PDF or check system.")
-        return redirect(url_for("student.dashboard"))
-
-    # ✅ STORE pdf_file ALSO
+    # -------- SAVE TO DB --------
     current_app.db.submissions.update_one(
         {
-            "student_id": ObjectId(current_user.id),
+            "student_id": student["_id"],
             "stage_id": ObjectId(stage_id)
         },
         {
             "$set": {
                 "file_name": filename,
-                "pdf_file": pdf_file,   # 🔥 IMPORTANT
+                "pdf_file": pdf_file,
                 "submitted_at": now,
                 "status": "pending",
                 "late": late
@@ -235,37 +377,60 @@ def upload_stage(stage_id):
         upsert=True
     )
 
-    # ---------------- NOTIFICATION ----------------
-
+    # -------- NOTIFICATION --------
     student_name = student["name"]
 
     stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
     stage_name = stage["name"]
 
     batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
-    faculty_id = batch["mentor_id"]
+    # faculty_id = batch.get("mentor_id")
+    faculty_id = batch.get("mentor_id")
 
-    create_notification(
-        faculty_id,
-        f"{student_name} submitted {stage_name}"
-    )
+    if faculty_id:
+        faculty_id = ObjectId(faculty_id)
 
-    # Late submission notification for admin
+    # Notify faculty
+    if faculty_id:
+        create_notification(
+            faculty_id,
+            f"{student_name} submitted {stage_name}"
+        )
+
+        # EMAIL faculty
+        faculty = current_app.db.users.find_one({"_id": faculty_id})
+
+        if faculty and faculty.get("email"):
+            try:
+                send_email(
+                    faculty["email"],
+                    "New Submission",
+                    submission_email(student_name, stage_name)
+                )
+            except Exception as e:
+                print("Email error:", e)
+
+    # -------- LATE SUBMISSION --------
     if late:
+
         admin = current_app.db.users.find_one({"role": "admin"})
 
-        create_notification(
-            admin["_id"],
-            f"{student_name} submitted {stage_name} late"
-        )
- 
-    if admin and admin.get("email"):
-        send_email(
-            admin["email"],
-            "Late Submission Alert",
-            late_submission_email(student_name, stage_name)
-        )
-        
-    flash("File uploaded successfully")
+        if admin:
+            create_notification(
+                admin["_id"],
+                f"{student_name} submitted {stage_name} late"
+            )
 
+            # EMAIL admin
+            if admin.get("email"):
+                try:
+                    send_email(
+                        admin["email"],
+                        "Late Submission Alert",
+                        late_submission_email(student_name, stage_name)
+                    )
+                except Exception as e:
+                    print("Email error:", e)
+
+    flash("File uploaded successfully")
     return redirect(url_for("student.dashboard"))
