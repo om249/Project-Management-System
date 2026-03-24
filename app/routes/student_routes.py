@@ -108,48 +108,95 @@ def dashboard():
     batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
 
     mentor = None
-
     if batch and batch.get("mentor_id"):
         mentor = current_app.db.users.find_one({"_id": batch["mentor_id"]})
 
-    stages = list(current_app.db.stages.find())
+    stages = list(current_app.db.stages.find().sort("order", 1))
 
     submissions = list(current_app.db.submissions.find({
         "student_id": student["_id"]
     }))
 
+    # ---------------- PROGRESS ----------------
     approved = 0
-
     for s in submissions:
-        if s["status"] == "approved":
+        if s.get("status") == "approved":   # ✅ FIXED
             approved += 1
 
-    progress = 0
-    if len(stages) > 0:
-        progress = int((approved / len(stages)) * 100)
+    progress = int((approved / len(stages)) * 100) if stages else 0
 
     notifications, unread_count = get_notifications(current_user.id)
 
-    today = datetime.utcnow()
+    # ---------------- DEADLINE REMINDER ----------------
+    today = datetime.utcnow().date()
 
     for stage in stages:
-        deadline = current_app.db.deadlines.find_one({
+
+        deadline_doc = current_app.db.deadlines.find_one({
             "batch_id": batch["_id"],
             "stage_id": stage["_id"]
         })
 
-        if deadline:
-            days_left = (deadline["deadline"] - today).days
+        if not deadline_doc:
+            continue
 
-            if days_left == 2:
+        deadline_date = deadline_doc["deadline"].date()
+        days_left = (deadline_date - today).days
+
+        # 🔥 GET SUBMISSION
+        submission = current_app.db.submissions.find_one({
+            "student_id": student["_id"],
+            "stage_id": stage["_id"]
+        })
+
+        status = submission.get("status") if submission else None
+
+        # ✅ SKIP if already submitted
+        if status in ["approved", "pending"]:
+            continue
+
+        # ✅ SKIP if reminder already sent
+        if submission and submission.get("reminder_sent") == True:
+            continue
+
+        # ---------------- MESSAGE LOGIC ----------------
+        message = None
+
+        if days_left == 2:
+            message = f"{stage['name']} deadline is in 2 days"
+
+        elif days_left == 1:
+            message = f"{stage['name']} deadline is tomorrow"
+
+        elif days_left == 0:
+            message = f"{stage['name']} deadline is today"
+
+        # ---------------- SEND ALERT ----------------
+        if message:
+
+            print("REMINDER:", message)   # DEBUG
+
+            # ✅ EMAIL
+            if student.get("email"):
                 try:
                     send_email(
                         student["email"],
                         "Deadline Reminder",
-                        f"<p>{stage['name']} deadline is in 2 days</p>"
+                        f"<p>{message}</p>"
                     )
-                except:
-                    pass
+                except Exception as e:
+                    print("Email error:", e)
+
+            # ✅ NOTIFICATION
+            create_notification(student["_id"], message)
+
+            # ✅ MARK REMINDER SENT (NO UPSERT)
+            if submission:
+                current_app.db.submissions.update_one(
+                    {"_id": submission["_id"]},
+                    {"$set": {"reminder_sent": True}}
+                )
+            
 
     return render_template(
         "student/dashboard.html",
@@ -371,7 +418,8 @@ def upload_stage(stage_id):
                 "pdf_file": pdf_file,
                 "submitted_at": now,
                 "status": "pending",
-                "late": late
+                "late": late,
+                "reminder_sent": False
             }
         },
         upsert=True

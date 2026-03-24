@@ -4,9 +4,9 @@
 
 <h2 class="page-title">Project Submissions</h2>
 
-<div class="card">
+<div class="card modern-card">
 
-<h4 class="mb-3">Project Stages</h4>
+<h3 class="section-title">Project Stages</h3>
 
 <table class="custom-table modern-table">
 
@@ -16,7 +16,6 @@
 <th>Deadline</th>
 <th>Upload</th>
 <th>Status</th>
-<th>Late</th>
 <th>Remark</th>
 </tr>
 </thead>
@@ -28,82 +27,75 @@
 {% set sub = submission_dict.get(stage._id|string) %}
 {% set deadline = deadline_dict.get(stage._id|string) %}
 
-<tr>
+<tr class="table-row">
 
-<td><strong>{{ stage.name }}</strong></td>
+<td class="stage-col">
+<strong>{{ stage.name }}</strong>
+</td>
 
 <td>
 {% if deadline %}
-{{ deadline.strftime("%d %b %Y") }}
+<span class="deadline">{{ deadline.strftime("%d %b %Y") }}</span>
 {% else %}
-<span class="text-muted">Not set</span>
+<span class="muted">Not set</span>
 {% endif %}
 </td>
 
 <td>
-
-<div class="file-actions">
 
 <form method="POST"
 action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
 enctype="multipart/form-data"
-class="upload-form">
+class="upload-box">
 
 <input type="file" name="file" required>
 
-<button class="btn-upload">
-<i class="fas fa-upload"></i>
-{% if sub %} Reupload {% else %} Upload {% endif %}
+{% if sub and sub.get('file_name') %}
+<button class="btn-primary">
+<i class="fas fa-sync"></i> Reupload
 </button>
+
+{% set file = sub.get('pdf_file') or sub.get('file_name') %}
+
+<button type="button"
+class="btn-view"
+onclick="openFileViewer('/admin/view-file/{{ file }}')">
+<i class="fas fa-eye"></i>View
+</button>
+
+{% else %}
+
+<button class="btn-primary">
+<i class="fas fa-upload"></i> Upload
+</button>
+
+{% endif %}
 
 </form>
 
-{% if sub %}
-{% set file = sub.get('pdf_file') or sub.get('file_name') %}
-
-<button class="btn-view"
-onclick="openFileViewer('/admin/view-file/{{ file }}')">
-<i class="fas fa-eye"></i>
-View
-</button>
-{% endif %}
-
-</div>
-
 </td>
 
 <td>
 {% if sub %}
-    {% if sub.status == "approved" %}
-    <span class="badge approved">Approved</span>
+    {% if sub.get("status") == "approved" %}
+        <span class="badge approved">Approved</span>
 
-```
-{% elif sub.status == "rejected" %}
-<span class="badge rejected">Rejected</span>
+    {% elif sub.get("status") == "rejected" %}
+        <span class="badge rejected">Rejected</span>
 
+    {% else %}
+        <span class="badge pending">Pending</span>
+    {% endif %}
 {% else %}
-<span class="badge pending">Pending</span>
-{% endif %}
-```
-
-{% else %} <span class="badge neutral">Not Submitted</span>
-{% endif %}
-
-</td>
-
-<td>
-{% if sub and sub.late %}
-<span class="late-badge">Late</span>
-{% else %}
-<span class="text-muted">-</span>
+    <span class="badge neutral">Not Submitted</span>
 {% endif %}
 </td>
 
 <td>
-{% if sub and sub.remark %}
-<span class="remark-text">{{ sub.remark }}</span>
+{% if sub and sub.get("remark") %}
+<span class="remark">{{ sub.remark }}</span>
 {% else %}
-<span class="text-muted">-</span>
+<span class="muted">—</span>
 {% endif %}
 </td>
 
@@ -112,9 +104,7 @@ View
 {% endfor %}
 
 </tbody>
-
 </table>
-
 </div>
 
 <!-- ================= FILE VIEW MODAL ================= -->
