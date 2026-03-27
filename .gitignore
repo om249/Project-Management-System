@@ -1,3 +1,18 @@
+# Environments and Config
 .env
-.config.py
-.requrirements.txt
+config.py
+requirements.txt
+
+# Folders
+venv/
+uploads/
+**/__pycache__/
+app/decorators/
+
+# Data/Excel files
+student_template.xlsx
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+*.pyo
+*.pyd
