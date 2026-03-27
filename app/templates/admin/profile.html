@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">Admin Profile</h2>
+
+<div class="profile-container">
+
+    <div class="profile-left">
+
+        <div class="profile-img-box">
+            {% if admin.photo %}
+            <img src="{{ url_for('static', filename='uploads/' + admin.photo) }}">
+            {% else %}
+            <i class="fas fa-user-shield"></i>
+            {% endif %}
+        </div>
+
+        <h3>{{ admin.name }}</h3>
+        <p class="role-badge">Administrator</p>
+
+        <button onclick="toggleEdit()" class="btn-edit">
+            <i class="fas fa-pen"></i> Update Profile
+        </button>
+
+    </div>
+
+    <div class="profile-right">
+
+        <div class="info-box">
+            <label>Email</label>
+            <p>{{ admin.email }}</p>
+        </div>
+
+        <div class="info-box">
+            <label>Role</label>
+            <p>{{ admin.role }}</p>
+        </div>
+
+        <div class="info-box">
+            <label>Created At</label>
+            <p>
+                {% if admin.created_at %}
+                {{ admin.created_at.strftime("%d %b %Y") }}
+                {% else %}
+                Not Available
+                {% endif %}
+            </p>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- EDIT FORM -->
+<div id="editForm" class="edit-form" style="display:none;">
+
+    <form method="POST" action="{{ url_for('admin.update_admin_profile') }}" enctype="multipart/form-data">
+
+        <input type="text" name="name" value="{{ admin.name }}" required>
+
+        <input type="email" name="email" value="{{ admin.email }}" required>
+
+        <input type="file" name="photo">
+
+        <button class="btn-save">Save Changes</button>
+
+    </form>
+
+</div>
+
+<script>
+    function toggleEdit() {
+        let form = document.getElementById("editForm");
+        form.style.display = form.style.display === "none" ? "block" : "none";
+    }
+</script>
+
+{% endblock %}

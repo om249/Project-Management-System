@@ -209,6 +209,61 @@ def dashboard():
     )
 
 
+@student_bp.route("/profile")
+@login_required
+@role_required("student")
+def student_profile():
+
+    student = current_app.db.students.find_one({
+        "_id": ObjectId(current_user.id)
+    })
+
+    batch = current_app.db.batches.find_one({
+        "_id": student.get("batch_id")
+    })
+
+    mentor = None
+    if batch and batch.get("mentor_id"):
+        mentor = current_app.db.users.find_one({
+            "_id": batch["mentor_id"]
+        })
+
+    return render_template(
+        "student/profile.html",
+        student=student,
+        batch=batch,
+        mentor=mentor
+    )
+
+# update profile
+@student_bp.route("/update-profile", methods=["POST"])
+@login_required
+@role_required("student")
+def update_student_profile():
+
+    name = request.form.get("name")
+    email = request.form.get("email")
+    file = request.files.get("photo")
+
+    update_data = {
+        "name": name,
+        "email": email
+    }
+
+    if file and file.filename:
+        filename = file.filename
+        file.save(os.path.join(current_app.config["UPLOAD_FOLDER"], filename))
+        update_data["photo"] = filename
+
+    current_app.db.students.update_one(
+        {"_id": ObjectId(current_user.id)},
+        {"$set": update_data}
+    )
+
+    flash("Profile updated successfully")
+    return redirect(url_for("student.student_profile"))
+
+
 @student_bp.route("/submissions")
 @login_required
 @role_required("student")

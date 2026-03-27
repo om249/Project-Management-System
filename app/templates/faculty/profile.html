@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">My Profile</h2>
+
+<div class="profile-container">
+
+    <!-- LEFT SIDE -->
+    <div class="profile-left">
+
+        <div class="profile-img-box">
+            {% if faculty.photo %}
+                <img src="{{ url_for('static', filename='uploads/' + faculty.photo) }}">
+            {% else %}
+                <i class="fas fa-user-circle"></i>
+            {% endif %}
+        </div>
+
+        <h3>{{ faculty.name }}</h3>
+        <p class="role-badge">Faculty</p>
+
+        <button onclick="toggleEdit()" class="btn-edit">
+            <i class="fas fa-pen"></i> Update Profile
+        </button>
+
+    </div>
+
+    <!-- RIGHT SIDE -->
+    <div class="profile-right">
+
+        <div class="info-box">
+            <label>Email</label>
+            <p>{{ faculty.email }}</p>
+        </div>
+
+        <div class="info-box">
+            <label>Assigned Batch</label>
+            <p>{{ batch.name if batch else "Not Assigned" }}</p>
+        </div>
+
+        <div class="info-box">
+            <label>Account Created</label>
+            <p>{{ faculty.created_at.strftime("%d %b %Y") if faculty.created_at else "-" }}</p>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- 🔥 EDIT FORM -->
+<div id="editForm" class="edit-form" style="display:none;">
+
+<form method="POST"
+      action="{{ url_for('admin.update_faculty_profile') }}"
+      enctype="multipart/form-data">
+
+    <input type="text" name="name" value="{{ faculty.name }}" required>
+
+    <input type="email" name="email" value="{{ faculty.email }}" required>
+
+    <input type="file" name="photo">
+
+    <button class="btn-save">
+        <i class="fas fa-save"></i> Save Changes
+    </button>
+
+</form>
+
+</div>
+
+<script>
+function toggleEdit(){
+    let form = document.getElementById("editForm");
+    form.style.display = form.style.display === "none" ? "block" : "none";
+}
+</script>
+
+{% endblock %}

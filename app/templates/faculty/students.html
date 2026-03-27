@@ -1,33 +1,42 @@
 {% extends "base.html" %}
-
 {% block content %}
 
-<h2 class="page-title">My Students</h2>
+<h2 class="page-title">Students</h2>
 
-<div class="card">
+<div class="card-modern">
 
-<h4>Batch: {{ batch.name }}</h4>
-
-<table class="custom-table">
+<table class="student-table">
 
 <thead>
 <tr>
-<th>PRN</th>
 <th>Name</th>
-<th>Email</th>
+<th>PRN</th>
+<th>Year</th>
+<th>Progress</th>
 </tr>
 </thead>
 
 <tbody>
 
 {% for s in students %}
-
 <tr>
-<td>{{ s.prn }}</td>
-<td>{{ s.name }}</td>
-<td>{{ s.email }}</td>
-</tr>
 
+<td class="student-name">
+<i class="fas fa-user-circle"></i>
+{{ s.name }}
+</td>
+
+<td>{{ s.prn }}</td>
+
+<td>{{ s.year }}</td>
+
+<td>
+<div class="progress-circle" data-progress="{{ s.progress or 0 }}">
+    <span>{{ s.progress or 0 }}%</span>
+</div>
+</td>
+
+</tr>
 {% endfor %}
 
 </tbody>

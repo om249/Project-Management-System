@@ -556,14 +556,6 @@ margin:0;
 font-weight:600;
 }
 
-.sidebar .nav-link{
-padding:12px 20px;
-font-size:15px;
-}
-
-.sidebar .nav-link:hover{
-background:#2e3d52;
-}
 
 /* CONTENT */
 
@@ -1487,4 +1479,204 @@ transform: translateY(-1px);
 /* MUTED */
 .muted {
     color: #aaa;
+}
+
+
+/* PROFILE UI */
+
+.profile-wrapper{
+    display: flex;
+    justify-content: center;
+}
+
+.profile-card-pro{
+    display: flex;
+    gap: 40px;
+    width: 700px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+}
+
+.profile-left{
+    text-align: center;
+    border-right: 1px solid #eee;
+    padding-right: 30px;
+}
+
+.profile-icon{
+    font-size: 70px;
+    color: #3b82f6;
+}
+
+.role-badge{
+    background: #e0ecff;
+    color: #2563eb;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    display: inline-block;
+    margin-top: 8px;
+}
+
+.profile-right{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.info-box{
+    background: #f8fafc;
+    padding: 12px 15px;
+    border-radius: 10px;
+}
+
+.info-box label{
+    font-size: 12px;
+    color: #888;
+}
+
+.info-box p{
+    margin: 3px 0 0;
+    font-weight: 600;
+}
+
+.card-modern{
+    background: #fff;
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+
+/* TABLE */
+.student-table{
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.student-table th{
+    text-align: left;
+    padding: 14px;
+    background: #f1f5f9;
+    font-weight: 600;
+}
+
+.student-table td{
+    padding: 16px 14px;
+    border-bottom: 1px solid #eee;
+}
+
+.student-table tr:hover{
+    background: #f9fafb;
+}
+
+/* NAME */
+.student-name{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 500;
+}
+
+.student-name i{
+    font-size: 20px;
+    color: #3b82f6;
+}
+
+/* PROGRESS CIRCLE */
+.progress-circle{
+    width: 55px;
+    height: 55px;
+    border-radius: 50%;
+    border: 5px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #333;
+    position: relative;
+}
+
+.profile-container{
+    display: flex;
+    gap: 30px;
+    background: #fff;
+    padding: 25px;
+    border-radius: 14px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.05);
+}
+
+.profile-left{
+    width: 250px;
+    text-align: center;
+    border-right: 1px solid #eee;
+    padding-right: 20px;
+}
+
+.profile-img-box img{
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.profile-img-box i{
+    font-size: 80px;
+    color: #3b82f6;
+}
+
+.role-badge{
+    background: #e0ecff;
+    color: #2563eb;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+}
+
+.btn-edit{
+    margin-top: 10px;
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.profile-right{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.info-box{
+    background: #f8fafc;
+    padding: 12px;
+    border-radius: 10px;
+}
+
+.edit-form{
+    margin-top: 20px;
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+
+.edit-form input{
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.btn-save{
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 8px;
 }

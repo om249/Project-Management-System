@@ -35,6 +35,48 @@ def dashboard():
         unread_count=unread_count
     )
 
+@admin_bp.route("/profile")
+@login_required
+@role_required("admin")
+def admin_profile():
+
+    admin = current_app.db.users.find_one({
+        "_id": ObjectId(current_user.id)
+    })
+
+    return render_template(
+        "admin/profile.html",
+        admin=admin
+    )
+
+
+@admin_bp.route("/update-admin-profile", methods=["POST"])
+@login_required
+@role_required("admin")
+def update_admin_profile():
+
+    name = request.form.get("name")
+    email = request.form.get("email")
+    file = request.files.get("photo")
+
+    update_data = {
+        "name": name,
+        "email": email
+    }
+
+    if file and file.filename:
+        filename = file.filename
+        file.save(os.path.join(current_app.config["UPLOAD_FOLDER"], filename))
+        update_data["photo"] = filename
+
+    current_app.db.users.update_one(
+        {"_id": ObjectId(current_user.id)},
+        {"$set": update_data}
+    )
+
+    flash("Profile updated successfully")
+    return redirect(url_for("admin.admin_profile"))
+
 
 # ===================== BATCH MANAGEMENT =====================
 # @admin_bp.route("/batches", methods=["GET", "POST"])
@@ -360,6 +402,37 @@ def manage_faculty():
     faculty_list = list(current_app.db.users.find({"role": "faculty"}))
 
     return render_template("admin/faculty.html", faculty=faculty_list)
+
+
+@admin_bp.route("/faculty/profile", methods=["GET", "POST"])
+@login_required
+@role_required("faculty")
+def faculty_profile():
+
+    faculty = current_app.db.users.find_one({
+        "_id": ObjectId(current_user.id)
+    })
+
+    if request.method == "POST":
+
+        name = request.form.get("name")
+        email = request.form.get("email")
+
+        current_app.db.users.update_one(
+            {"_id": faculty["_id"]},
+            {
+                "$set": {
+                    "name": name,
+                    "email": email
+                }
+            }
+        )
+
+        flash("Profile updated successfully")
+        return redirect(url_for("admin.faculty_profile"))
+
+    return render_template("faculty/profile.html", faculty=faculty)
+
 
 # ===================== DELETE FACULTY =====================
 @admin_bp.route("/delete-faculty/<faculty_id>")
@@ -866,8 +939,12 @@ def faculty_students():
 
     faculty_id = current_user.id
 
+    faculty= current_app.db.users.find_one({
+        "_id": ObjectId(faculty_id)
+    })
+
     batch = current_app.db.batches.find_one({
-        "mentor_id": ObjectId(faculty_id)
+        "mentor_id": ObjectId(current_user.id)
     })
 
     if not batch:
@@ -877,11 +954,50 @@ def faculty_students():
         "batch_id": batch["_id"]
     }))
 
+    for s in students:
+        total = current_app.db.stages.count_documents({})
+        approved = current_app.db.submissions.count_documents({
+            "student_id": s["_id"],
+            "status": "approved"
+        })
+
+        s["progress"] = int((approved / total) * 100) if total > 0 else 0
+
     return render_template(
         "faculty/students.html",
         students=students,
         batch=batch
     )
+
+
+# update faculty profile
+@admin_bp.route("/update-faculty-profile", methods=["POST"])
+@login_required
+@role_required("faculty")
+def update_faculty_profile():
+
+    name = request.form.get("name")
+    email = request.form.get("email")
+    file = request.files.get("photo")
+
+    update_data = {
+        "name": name,
+        "email": email
+    }
+
+    if file and file.filename:
+        filename = file.filename
+        file.save(os.path.join(current_app.config["UPLOAD_FOLDER"], filename))
+        update_data["photo"] = filename
+
+    current_app.db.users.update_one(
+        {"_id": ObjectId(current_user.id)},
+        {"$set": update_data}
+    )
+
+    flash("Profile updated successfully")
+    return redirect(url_for("admin.faculty_profile"))
+
 
 # ---------------- MENTOR SUBMISSIONS ----------------
 @admin_bp.route("/mentor-submissions")
