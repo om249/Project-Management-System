@@ -4,8 +4,47 @@
 <h2 class="page-title">Student Management</h2>
 
 <div class="card">
+<div class="session-toolbar">
+    <div>
+        <h4>Academic Sessions</h4>
+        <p class="section-subtitle">Separate each intake year and keep older records easy to revisit.</p>
+    </div>
+
+    <div class="session-toolbar-actions">
+        <form method="GET" action="{{ url_for('admin.manage_students') }}" class="session-filter-form">
+            <select name="session" onchange="this.form.submit()">
+                {% for session in sessions %}
+                <option value="{{ session._id }}" {% if selected_session and session._id == selected_session._id %}selected{% endif %}>
+                    {{ session.name }}{% if session.is_active %} • Current{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+
+        {% if selected_session and not selected_session.is_active %}
+        <form method="POST" action="{{ url_for('admin.activate_academic_session', session_id=selected_session._id) }}">
+            <input type="hidden" name="next_url" value="{{ url_for('admin.manage_students', session=selected_session._id) }}">
+            <button type="submit" class="btn-edit">Set As Current</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<form method="POST" action="{{ url_for('admin.create_academic_session') }}" class="inline-form session-create-form">
+    <input type="hidden" name="next_url" value="{{ url_for('admin.manage_students', session=selected_session._id) }}">
+    <input type="text" name="name" placeholder="Create new session (e.g. 2026-28)" required>
+    <label class="session-checkbox">
+        <input type="checkbox" name="make_active">
+        Make current session
+    </label>
+    <button type="submit" class="btn-primary-custom">Create Session</button>
+</form>
+</div>
+
+<div class="card">
 
 <h4>Add Student</h4>
+<p class="section-subtitle">Adding students to session: <strong>{{ selected_session.name }}</strong></p>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
@@ -21,14 +60,13 @@
 
 
 <form method="POST" action="{{ url_for('admin.add_student') }}" class="add-student-form">
+    <input type="hidden" name="session_id" value="{{ selected_session._id }}">
 
     <input type="text" name="name" placeholder="Student Name" required>
 
     <input type="text" name="prn" placeholder="PRN" required>
 
     <input type="email" name="email" placeholder="Email" required>
-
-    <input type="text" name="year" placeholder="Year (e.g. 2025-27)" required>
 
     <select name="batch_id" required>
         <option value="">Select Batch</option>
@@ -52,6 +90,7 @@
       action="{{ url_for('admin.upload_students') }}"
       enctype="multipart/form-data"
       class="upload-form">
+<input type="hidden" name="session_id" value="{{ selected_session._id }}">
 
 <div class="upload-container">
 
@@ -84,6 +123,7 @@ Download Template
 <div class="card">
 
 <h4>Student List</h4>
+<p class="section-subtitle">Showing records for <strong>{{ selected_session.name }}</strong></p>
 
 <table class="custom-table">
 
@@ -92,7 +132,8 @@ Download Template
 <th>PRN</th>
 <th>Name</th>
 <th>Email</th>
-<th>Year</th>
+<th>Session</th>
+<th>Batch</th>
 </tr>
 </thead>
 
@@ -105,6 +146,7 @@ Download Template
 <td>{{ s.name }}</td>
 <td>{{ s.email }}</td>
 <td>{{ s.year }}</td>
+<td>{{ s.batch_name }}</td>
 
 </tr>
 {% endfor %}

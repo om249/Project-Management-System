@@ -4,161 +4,121 @@
 
 <h2 class="page-title">Dashboard</h2>
 
+<section class="mentor-dashboard">
 
+<div class="mentor-hero card">
+    <div class="mentor-hero-copy">
+        <span class="dashboard-kicker">Faculty Overview</span>
+        <h3>{{ batch.name if batch else "No Batch Assigned Yet" }}</h3>
+        <p>
+            Review project activity, monitor upcoming deadlines, and keep your
+            mentoring workflow focused on submissions that need attention.
+        </p>
 
-<div class="card">
-<h4>Assigned Batch</h4>
-<p><strong>{{ batch.name }}</strong></p>
+        <div class="dashboard-action-row">
+            <a href="{{ url_for('admin.mentor_submissions') }}" class="btn-primary-custom">
+                <i class="fas fa-file-circle-check"></i> Review Submissions
+            </a>
+            <a href="{{ url_for('admin.faculty_students') }}" class="btn-edit">
+                <i class="fas fa-users"></i> Open Students Page
+            </a>
+        </div>
+    </div>
+
+    <div class="mentor-hero-side">
+        <div class="mentor-mini-card">
+            <span>Assigned Batch</span>
+            <strong>{{ batch.name if batch else "Not Assigned" }}</strong>
+        </div>
+        <div class="mentor-mini-card">
+            <span>Tracked Stages</span>
+            <strong>{{ stages|length }}</strong>
+        </div>
+    </div>
 </div>
 
-<div class="analytics-grid">
+<div class="analytics-grid mentor-analytics-grid">
+    <div class="analytics-card">
+        <h4><i class="fa fa-users"></i> Total Students</h4>
+        <p>{{ total_students }}</p>
+    </div>
 
-<div class="analytics-card">
-<h4><i class="fa fa-users"></i> Total Students</h4>
-<p>{{ total_students }}</p>
+    <div class="analytics-card pending">
+        <h4><i class="fa fa-clock"></i> Pending Reviews</h4>
+        <p>{{ pending_reviews }}</p>
+    </div>
+
+    <div class="analytics-card approved">
+        <h4><i class="fa fa-check-circle"></i> Approved</h4>
+        <p>{{ approved_count }}</p>
+    </div>
+
+    <div class="analytics-card late">
+        <h4><i class="fa fa-exclamation-triangle"></i> Late Submissions</h4>
+        <p>{{ late_submissions }}</p>
+    </div>
 </div>
 
-<div class="analytics-card pending">
-<h4><i class="fa fa-clock"></i> Pending Reviews</h4>
-<p>{{ pending_reviews }}</p>
+<div class="dashboard-dual-grid">
+    <div class="card dashboard-list-card">
+        <div class="dashboard-section-head">
+            <h4>Project Stage Deadlines</h4>
+            <span>Batch schedule overview</span>
+        </div>
+
+        <div class="deadline-list">
+            {% for stage in stages %}
+            <div class="deadline-list-item">
+                <div>
+                    <strong>{{ stage.name }}</strong>
+                    <p>Track this stage for your assigned batch.</p>
+                </div>
+                <span class="deadline-pill">
+                    {% if deadline_dict.get(stage._id|string) %}
+                    {{ deadline_dict.get(stage._id|string).strftime("%d %b %Y") }}
+                    {% else %}
+                    Not set
+                    {% endif %}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card dashboard-list-card">
+        <div class="dashboard-section-head">
+            <h4>Mentor Priorities</h4>
+            <span>Recommended next steps</span>
+        </div>
+
+        <div class="priority-list">
+            <div class="priority-item">
+                <div class="task-bullet"><i class="fas fa-hourglass-half"></i></div>
+                <div>
+                    <strong>Review pending work first</strong>
+                    <p>{{ pending_reviews }} submissions are waiting for your decision.</p>
+                </div>
+            </div>
+
+            <div class="priority-item">
+                <div class="task-bullet"><i class="fas fa-bell"></i></div>
+                <div>
+                    <strong>Watch deadline pressure</strong>
+                    <p>{{ late_submissions }} submissions were marked late across your batch.</p>
+                </div>
+            </div>
+
+            <div class="priority-item">
+                <div class="task-bullet"><i class="fas fa-thumbs-up"></i></div>
+                <div>
+                    <strong>Keep approvals moving</strong>
+                    <p>{{ approved_count }} submissions have already been approved successfully.</p>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
-<div class="analytics-card approved">
-<h4><i class="fa fa-check-circle"></i> Approved</h4>
-<p>{{ approved_count }}</p>
-</div>
-
-<div class="analytics-card late">
-<h4><i class="fa fa-exclamation-triangle"></i> Late Submissions</h4>
-<p>{{ late_submissions }}</p>
-</div>
-
-</div>
-
-<div class="card">
-
-<h4>Project Stage Deadlines</h4>
-
-<table class="custom-table">
-
-<thead>
-<tr>
-<th>Stage</th>
-<th>Deadline</th>
-</tr>
-</thead>
-
-<tbody>
-
-{% for stage in stages %}
-
-<tr>
-<td>{{ stage.name }}</td>
-
-<td>
-{% if deadline_dict.get(stage._id|string) %}
-{{ deadline_dict.get(stage._id|string).strftime("%Y-%m-%d") }}
-{% else %}
-Not set
-{% endif %}
-</td>
-
-</tr>
-
-{% endfor %}
-
-</tbody>
-
-</table>
-
-</div>
-
-<div class="card">
-
-<h4>Students</h4>
-
-<table class="custom-table">
-
-<thead>
-<tr>
-<th>Name</th>
-<th>PRN</th>
-<th>Year</th>
-<th>Progress</th>
-</tr>
-</thead>
-
-<tbody>
-
-{% for student in students %}
-
-{% set approved = 0 %}
-
-{% for stage in stages %}
-{% set key = student._id|string + "_" + stage._id|string %}
-{% set sub = submission_dict.get(key) %}
-
-{% if sub and sub.status == "approved" %}
-{% set approved = approved + 1 %}
-{% endif %}
-
-{% endfor %}
-
-{% set progress = (approved / stages|length * 100) if stages|length > 0 else 0 %}
-
-<tr>
-
-<td>{{ student.name }}</td>
-
-<td>{{ student.prn }}</td>
-
-<td>{{ student.year }}</td>
-
-<td>
-
-<div class="progress-circle">
-
-<svg width="60" height="60">
-
-<circle
-cx="30"
-cy="30"
-r="24"
-stroke="#e5e7eb"
-stroke-width="6"
-fill="none"
-/>
-
-<circle
-cx="30"
-cy="30"
-r="24"
-stroke="#22c55e"
-stroke-width="6"
-fill="none"
-stroke-dasharray="151"
-stroke-dashoffset="{{ 151 - (151 * progress / 100) }}"
-stroke-linecap="round"
-/>
-
-</svg>
-
-<div class="circle-text">
-{{ progress|round }}%
-</div>
-
-</div>
-
-</td>
-
-</tr>
-
-{% endfor %}
-
-</tbody>
-
-</table>
-
-</div>
+</section>
 
 {% endblock %}

@@ -5,6 +5,7 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.decorators.role_required import role_required
 import os
+import re
 from werkzeug.utils import secure_filename
 from app.services.email_service import late_submission_email
 from app.services.notification_service import create_notification, get_notifications, mark_notifications_read
@@ -13,6 +14,45 @@ from app.services.email_service import send_email, submission_email, late_submis
 from datetime import datetime, timedelta
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
+
+
+def save_profile_photo(file_storage, user_id):
+    if not file_storage or not file_storage.filename:
+        return None
+
+    upload_folder = os.path.join(current_app.root_path, "static", "uploads")
+    os.makedirs(upload_folder, exist_ok=True)
+
+    safe_name = secure_filename(file_storage.filename)
+    _, extension = os.path.splitext(safe_name)
+    extension = extension.lower() or ".png"
+    filename = f"profile-{user_id}-{int(datetime.utcnow().timestamp())}{extension}"
+    file_storage.save(os.path.join(upload_folder, filename))
+    return filename
+
+
+def get_session_deadline_query(batch, stage_id=None):
+    if not batch or not batch.get("session_id"):
+        return None
+
+    query = {"session_id": batch["session_id"]}
+    if stage_id is not None:
+        query["stage_id"] = stage_id
+    return query
+
+
+def validate_password_rules(password):
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least 1 capital letter."
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least 1 small letter."
+    if not re.search(r"\d", password):
+        return "Password must contain at least 1 digit."
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return "Password must contain at least 1 symbol."
+    return None
 
 
 # ---------------- STUDENT LOGIN ----------------
@@ -32,7 +72,7 @@ def student_login():
 
             return redirect(url_for("student.dashboard"))
 
-        flash("Invalid PRN or Password")
+        flash("Invalid PRN or password.", "danger")
 
     return render_template("student/login.html")
 
@@ -129,13 +169,11 @@ def dashboard():
 
     # ---------------- DEADLINE REMINDER ----------------
     today = datetime.utcnow().date()
+    today_key = today.isoformat()
 
     for stage in stages:
-
-        deadline_doc = current_app.db.deadlines.find_one({
-            "batch_id": batch["_id"],
-            "stage_id": stage["_id"]
-        })
+        deadline_query = get_session_deadline_query(batch, stage["_id"])
+        deadline_doc = current_app.db.deadlines.find_one(deadline_query) if deadline_query else None
 
         if not deadline_doc:
             continue
@@ -155,9 +193,6 @@ def dashboard():
         if status in ["approved", "pending"]:
             continue
 
-        # ✅ SKIP if reminder already sent
-        if submission and submission.get("reminder_sent") == True:
-            continue
 
         # ---------------- MESSAGE LOGIC ----------------
         message = None
@@ -173,6 +208,25 @@ def dashboard():
 
         # ---------------- SEND ALERT ----------------
         if message:
+            reminder_result = current_app.db.deadline_reminders.update_one(
+                {
+                    "student_id": student["_id"],
+                    "stage_id": stage["_id"],
+                    "reminder_date": today_key
+                },
+                {
+                    "$setOnInsert": {
+                        "student_id": student["_id"],
+                        "stage_id": stage["_id"],
+                        "reminder_date": today_key,
+                        "created_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+
+            if reminder_result.matched_count > 0:
+                continue
 
             print("REMINDER:", message)   # DEBUG
 
@@ -191,10 +245,21 @@ def dashboard():
             create_notification(student["_id"], message)
 
             # ✅ MARK REMINDER SENT (NO UPSERT)
-            if submission:
-                current_app.db.submissions.update_one(
-                    {"_id": submission["_id"]},
-                    {"$set": {"reminder_sent": True}}
+            current_app.db.deadline_reminders.update_one(
+                    {
+                        "student_id": student["_id"],
+                        "stage_id": stage["_id"],
+                        "reminder_date": today_key
+                    },
+                    {
+                        "$set": {
+                            "student_id": student["_id"],
+                            "stage_id": stage["_id"],
+                            "reminder_date": today_key,
+                            "created_at": datetime.utcnow()
+                        }
+                    },
+                    upsert=True
                 )
             
 
@@ -244,6 +309,8 @@ def update_student_profile():
     name = request.form.get("name")
     email = request.form.get("email")
     file = request.files.get("photo")
+    new_password = request.form.get("new_password", "").strip()
+    confirm_password = request.form.get("confirm_password", "").strip()
 
     update_data = {
         "name": name,
@@ -251,9 +318,21 @@ def update_student_profile():
     }
 
     if file and file.filename:
-        filename = file.filename
-        file.save(os.path.join(current_app.config["UPLOAD_FOLDER"], filename))
+        filename = save_profile_photo(file, current_user.id)
         update_data["photo"] = filename
+
+    if new_password or confirm_password:
+        if new_password != confirm_password:
+            flash("New password and confirm password must match.", "danger")
+            return redirect(url_for("student.student_profile"))
+
+        password_error = validate_password_rules(new_password)
+        if password_error:
+            flash(password_error, "danger")
+            return redirect(url_for("student.student_profile"))
+
+        update_data["password"] = generate_password_hash(new_password)
+        update_data["password_changed"] = True
 
     current_app.db.students.update_one(
         {"_id": ObjectId(current_user.id)},
@@ -282,9 +361,10 @@ def submissions():
     for s in submissions:
         submission_dict[str(s["stage_id"])] = s
 
-    deadlines = list(current_app.db.deadlines.find({
-        "batch_id": student["batch_id"]
-    }))
+    deadline_query = get_session_deadline_query(
+        current_app.db.batches.find_one({"_id": student["batch_id"]})
+    )
+    deadlines = list(current_app.db.deadlines.find(deadline_query)) if deadline_query else []
 
     deadline_dict = {}
 
@@ -434,10 +514,9 @@ def upload_stage(stage_id):
     batch_id = student["batch_id"]
 
     # -------- DEADLINE CHECK --------
-    deadline_doc = current_app.db.deadlines.find_one({
-        "batch_id": batch_id,
-        "stage_id": ObjectId(stage_id)
-    })
+    batch = current_app.db.batches.find_one({"_id": batch_id})
+    deadline_query = get_session_deadline_query(batch, ObjectId(stage_id))
+    deadline_doc = current_app.db.deadlines.find_one(deadline_query) if deadline_query else None
 
     deadline = deadline_doc["deadline"] if deadline_doc else None
     now = datetime.utcnow()
@@ -446,14 +525,38 @@ def upload_stage(stage_id):
     if deadline and now > deadline:
         late = True
 
+    existing_submission = current_app.db.submissions.find_one({
+        "student_id": student["_id"],
+        "stage_id": ObjectId(stage_id)
+    })
+
     # -------- FILE UPLOAD --------
     file = request.files["file"]
-    filename = secure_filename(file.filename)
+    original_name = secure_filename(file.filename)
+    base_name, extension = os.path.splitext(original_name)
+    filename = f"{base_name}-{student['_id']}-{int(now.timestamp())}{extension.lower()}"
 
     upload_folder = current_app.config["UPLOAD_FOLDER"]
 
     if not os.path.exists(upload_folder):
         os.makedirs(upload_folder)
+
+    if existing_submission:
+        old_files = {
+            existing_submission.get("file_name"),
+            existing_submission.get("pdf_file")
+        }
+
+        for old_file in old_files:
+            if not old_file:
+                continue
+
+            old_path = os.path.join(upload_folder, old_file)
+            if os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                except OSError:
+                    pass
 
     file_path = os.path.join(upload_folder, filename)
     file.save(file_path)
@@ -475,6 +578,10 @@ def upload_stage(stage_id):
                 "status": "pending",
                 "late": late,
                 "reminder_sent": False
+            },
+            "$unset": {
+                "remark": "",
+                "reviewed_at": ""
             }
         },
         upsert=True

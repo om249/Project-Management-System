@@ -4,7 +4,59 @@
 <h2 class="page-title">Batch Management</h2>
 
 <div class="card">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-container">
+        {% for category, message in messages %}
+        <div class="flash-message {{ category }}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="session-toolbar">
+        <div>
+            <h4>Academic Sessions</h4>
+            <p class="section-subtitle">Keep each year’s batches separate so mentor assignment and student history stay clean.</p>
+        </div>
+
+        <div class="session-toolbar-actions">
+            <form method="GET" action="{{ url_for('admin.manage_batches') }}" class="session-filter-form">
+                <select name="session" onchange="this.form.submit()">
+                    {% for session in sessions %}
+                    <option value="{{ session._id }}" {% if selected_session and session._id == selected_session._id %}selected{% endif %}>
+                        {{ session.name }}{% if session.is_active %} • Current{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
+
+            {% if selected_session and not selected_session.is_active %}
+            <form method="POST" action="{{ url_for('admin.activate_academic_session', session_id=selected_session._id) }}">
+                <input type="hidden" name="next_url" value="{{ url_for('admin.manage_batches', session=selected_session._id) }}">
+                <button type="submit" class="btn-edit">Set As Current</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('admin.create_academic_session') }}" class="inline-form session-create-form">
+        <input type="hidden" name="next_url" value="{{ url_for('admin.manage_batches', session=selected_session._id) }}">
+        <input type="text" name="name" placeholder="Create new session (e.g. 2026-28)" required>
+        <label class="session-checkbox">
+            <input type="checkbox" name="make_active">
+            Make current session
+        </label>
+        <button type="submit" class="btn-primary-custom">Create Session</button>
+    </form>
+</div>
+
+<div class="card">
+    <p class="section-subtitle">Creating batch for session: <strong>{{ selected_session.name }}</strong></p>
     <form method="POST" class="inline-form">
+        <input type="hidden" name="session" value="{{ selected_session._id }}">
         <input type="text" name="name" placeholder="Enter batch name" required>
         <button type="submit" class="btn-primary-custom">
             Create Batch
@@ -14,11 +66,13 @@
 
 <div class="card">
     <h4>Existing Batches</h4>
+    <p class="section-subtitle">Showing batches for <strong>{{ selected_session.name }}</strong></p>
 
     <table class="custom-table">
         <thead>
             <tr>
                 <th>Batch Name</th>
+                <th>Session</th>
                 <th>Mentor</th>
                 <th>Assign Mentor</th>
                 <th>Assign Students</th>
@@ -30,6 +84,7 @@
             {% for batch in batches %}
             <tr>
                 <td>{{ batch.name }}</td>
+                <td>{{ batch.year }}</td>
 
                 <td>
                     {% if batch.mentor_name %}
@@ -51,6 +106,10 @@
         <input type="hidden"
                name="batch_id"
                value="{{ batch._id }}">
+
+        <input type="hidden"
+               name="session"
+               value="{{ selected_session._id }}">
 
         <select name="mentor_id" required style="height: 35px;">
 

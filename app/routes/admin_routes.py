@@ -1,5 +1,7 @@
 import email
 from unittest import result
+import re
+import os
 
 from numpy import rint
 import pandas as pd
@@ -11,11 +13,184 @@ from datetime import datetime
 from app.decorators.role_required import role_required
 from app import bcrypt
 from flask import send_from_directory
+from werkzeug.utils import secure_filename
 from app.services.notification_service import get_notifications, create_notification,  mark_notifications_read
-from app.services.email_service import send_email, student_welcome_email, submission_email, late_submission_email, status_email
+from app.services.email_service import send_email, student_welcome_email, faculty_welcome_email, submission_email, late_submission_email, status_email, mentor_assignment_email, student_mentor_assigned_email
 from app.routes.student_routes import submissions
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+SESSION_NAME_PATTERN = re.compile(r"^\d{4}-\d{2}$")
+EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+
+
+def is_valid_session_name(value):
+    return bool(value and SESSION_NAME_PATTERN.match(str(value).strip()))
+
+
+def normalize_excel_header(value):
+    return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
+
+
+def is_valid_email(value):
+    return bool(value and EMAIL_PATTERN.match(str(value).strip()))
+
+
+def validate_password_rules(password):
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least 1 capital letter."
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least 1 small letter."
+    if not re.search(r"\d", password):
+        return "Password must contain at least 1 digit."
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return "Password must contain at least 1 symbol."
+    return None
+
+
+def _session_label_from_year(year_text):
+    if is_valid_session_name(year_text):
+        return str(year_text).strip()
+
+    year = datetime.utcnow().year
+    return f"{year}-{str(year + 2)[-2:]}"
+
+
+def save_profile_photo(file_storage, user_id):
+    if not file_storage or not file_storage.filename:
+        return None
+
+    upload_folder = os.path.join(current_app.root_path, "static", "uploads")
+    os.makedirs(upload_folder, exist_ok=True)
+
+    safe_name = secure_filename(file_storage.filename)
+    _, extension = os.path.splitext(safe_name)
+    extension = extension.lower() or ".png"
+    filename = f"profile-{user_id}-{int(datetime.utcnow().timestamp())}{extension}"
+    file_storage.save(os.path.join(upload_folder, filename))
+    return filename
+
+
+def get_session_deadline_query(session_id, stage_id=None):
+    query = {"session_id": session_id}
+    if stage_id is not None:
+        query["stage_id"] = stage_id
+    return query
+
+
+def ensure_academic_sessions():
+    sessions = list(
+        current_app.db.academic_sessions.find().sort("created_at", -1)
+    )
+
+    if not sessions:
+        default_label = _session_label_from_year(None)
+        current_app.db.academic_sessions.insert_one({
+            "name": default_label,
+            "is_active": True,
+            "created_at": datetime.utcnow()
+        })
+        sessions = list(current_app.db.academic_sessions.find().sort("created_at", -1))
+
+    if not any(session.get("is_active") for session in sessions):
+        current_app.db.academic_sessions.update_one(
+            {"_id": sessions[0]["_id"]},
+            {"$set": {"is_active": True}}
+        )
+        sessions[0]["is_active"] = True
+
+    existing_names = {
+        session["name"] for session in sessions if is_valid_session_name(session.get("name"))
+    }
+    legacy_years = set(
+        value for value in current_app.db.students.distinct("year") if is_valid_session_name(value)
+    )
+    legacy_years.update(
+        value for value in current_app.db.batches.distinct("year") if is_valid_session_name(value)
+    )
+
+    for legacy_year in legacy_years:
+        if legacy_year not in existing_names:
+            current_app.db.academic_sessions.insert_one({
+                "name": legacy_year,
+                "is_active": False,
+                "created_at": datetime.utcnow()
+            })
+
+    sessions = [
+        session
+        for session in current_app.db.academic_sessions.find().sort("created_at", -1)
+        if is_valid_session_name(session.get("name"))
+    ]
+
+    if not sessions:
+        default_label = _session_label_from_year(None)
+        current_app.db.academic_sessions.insert_one({
+            "name": default_label,
+            "is_active": True,
+            "created_at": datetime.utcnow()
+        })
+        sessions = list(current_app.db.academic_sessions.find({"name": default_label}))
+
+    return sessions
+
+
+def get_selected_session(selected_session_id=None):
+    sessions = ensure_academic_sessions()
+    selected_session = None
+
+    if selected_session_id:
+        try:
+            selected_session = next(
+                (session for session in sessions if session["_id"] == ObjectId(selected_session_id)),
+                None
+            )
+        except Exception:
+            selected_session = None
+
+    if not selected_session:
+        selected_session = next(
+            (session for session in sessions if session.get("is_active")),
+            sessions[0]
+        )
+
+    return sessions, selected_session
+
+
+def session_filter(selected_session):
+    return {
+        "$or": [
+            {"session_id": selected_session["_id"]},
+            {
+                "session_id": {"$exists": False},
+                "year": selected_session["name"]
+            }
+        ]
+    }
+
+
+def get_faculty_assigned_batch(faculty_id, selected_session_id=None):
+    sessions, selected_session = get_selected_session(selected_session_id)
+    scoped_filter = session_filter(selected_session)
+
+    batch = current_app.db.batches.find_one(
+        {
+            "mentor_id": faculty_id,
+            "$or": scoped_filter["$or"]
+        },
+        sort=[("created_at", -1)]
+    )
+
+    if not batch:
+        batch = current_app.db.batches.find_one(
+            {"mentor_id": faculty_id},
+            sort=[("created_at", -1)]
+        )
+
+    return batch, sessions, selected_session
 
 
 # ===================== DASHBOARD =====================
@@ -25,12 +200,41 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 def dashboard():
     total_batches = current_app.db.batches.count_documents({})
     total_stages = current_app.db.stages.count_documents({})
+    total_students = current_app.db.students.count_documents({})
+    total_faculty = current_app.db.users.count_documents({"role": "faculty"})
+    pending_submissions = current_app.db.submissions.count_documents({"status": "pending"})
+    approved_submissions = current_app.db.submissions.count_documents({"status": "approved"})
+    late_submissions = current_app.db.submissions.count_documents({"late": True})
+    batches = list(current_app.db.batches.find().sort("created_at", -1))
+
+    batch_summaries = []
+    for batch in batches[:5]:
+        student_count = current_app.db.students.count_documents({"batch_id": batch["_id"]})
+        mentor_name = "Not Assigned"
+
+        if batch.get("mentor_id"):
+            mentor = current_app.db.users.find_one({"_id": batch["mentor_id"]})
+            if mentor:
+                mentor_name = mentor.get("name", "Not Assigned")
+
+        batch_summaries.append({
+            "name": batch["name"],
+            "mentor_name": mentor_name,
+            "student_count": student_count
+        })
+
     notifications, unread_count = get_notifications(current_user.id)
 
     return render_template(
         "admin/dashboard.html",
         total_batches=total_batches,
         total_stages=total_stages,
+        total_students=total_students,
+        total_faculty=total_faculty,
+        pending_submissions=pending_submissions,
+        approved_submissions=approved_submissions,
+        late_submissions=late_submissions,
+        batch_summaries=batch_summaries,
         notifications=notifications,
         unread_count=unread_count
     )
@@ -58,6 +262,8 @@ def update_admin_profile():
     name = request.form.get("name")
     email = request.form.get("email")
     file = request.files.get("photo")
+    new_password = request.form.get("new_password", "").strip()
+    confirm_password = request.form.get("confirm_password", "").strip()
 
     update_data = {
         "name": name,
@@ -65,9 +271,21 @@ def update_admin_profile():
     }
 
     if file and file.filename:
-        filename = file.filename
-        file.save(os.path.join(current_app.config["UPLOAD_FOLDER"], filename))
+        filename = save_profile_photo(file, current_user.id)
         update_data["photo"] = filename
+
+    if new_password or confirm_password:
+        if new_password != confirm_password:
+            flash("New password and confirm password must match.", "danger")
+            return redirect(url_for("admin.admin_profile"))
+
+        password_error = validate_password_rules(new_password)
+        if password_error:
+            flash(password_error, "danger")
+            return redirect(url_for("admin.admin_profile"))
+
+        update_data["password"] = bcrypt.generate_password_hash(new_password).decode("utf-8")
+        update_data["password_changed"] = True
 
     current_app.db.users.update_one(
         {"_id": ObjectId(current_user.id)},
@@ -76,6 +294,56 @@ def update_admin_profile():
 
     flash("Profile updated successfully")
     return redirect(url_for("admin.admin_profile"))
+
+
+@admin_bp.route("/academic-sessions", methods=["POST"])
+@login_required
+@role_required("admin")
+def create_academic_session():
+    name = request.form.get("name", "").strip()
+    next_url = request.form.get("next_url") or url_for("admin.manage_students")
+    make_active = request.form.get("make_active") == "on"
+
+    if not name:
+        flash("Session name is required.", "warning")
+        return redirect(next_url)
+
+    if not is_valid_session_name(name):
+        flash("Session format must be like 2025-27.", "warning")
+        return redirect(next_url)
+
+    existing = current_app.db.academic_sessions.find_one({"name": name})
+    if existing:
+        flash("Academic session already exists.", "warning")
+        return redirect(next_url)
+
+    if make_active:
+        current_app.db.academic_sessions.update_many({}, {"$set": {"is_active": False}})
+
+    current_app.db.academic_sessions.insert_one({
+        "name": name,
+        "is_active": make_active,
+        "created_at": datetime.utcnow()
+    })
+
+    flash("Academic session created successfully.", "success")
+    return redirect(next_url)
+
+
+@admin_bp.route("/academic-sessions/<session_id>/activate", methods=["POST"])
+@login_required
+@role_required("admin")
+def activate_academic_session(session_id):
+    next_url = request.form.get("next_url") or url_for("admin.manage_students", session=session_id)
+
+    current_app.db.academic_sessions.update_many({}, {"$set": {"is_active": False}})
+    current_app.db.academic_sessions.update_one(
+        {"_id": ObjectId(session_id)},
+        {"$set": {"is_active": True}}
+    )
+
+    flash("Current academic session updated.", "success")
+    return redirect(next_url)
 
 
 # ===================== BATCH MANAGEMENT =====================
@@ -112,31 +380,37 @@ def update_admin_profile():
 @login_required
 @role_required("admin")
 def manage_batches():
+    selected_session_id = request.values.get("session")
+    sessions, selected_session = get_selected_session(selected_session_id)
 
     if request.method == "POST":
         name = request.form.get("name")
 
         if name:
             name = name.strip()
-            existing = current_app.db.batches.find_one({"name": name})
+            existing = current_app.db.batches.find_one({
+                "name": name,
+                "session_id": selected_session["_id"]
+            })
 
             if existing:
                 flash("Batch already exists.")
             else:
                 current_app.db.batches.insert_one({
                     "name": name,
-                    "year_id": ObjectId(year_id),
+                    "year": selected_session["name"],
+                    "session_id": selected_session["_id"],
                     "mentor_id": None,
                     "created_at": datetime.utcnow()
                 })
                 flash("Batch created successfully.")
 
-        return redirect(url_for("admin.manage_batches"))
+        return redirect(url_for("admin.manage_batches", session=str(selected_session["_id"])))
 
-    batches = list(current_app.db.batches.find().sort("created_at", -1))
+    batches = list(current_app.db.batches.find(session_filter(selected_session)).sort("created_at", -1))
 
     # Get all assigned mentor_ids
-    assigned_mentors = current_app.db.batches.distinct("mentor_id")
+    assigned_mentors = current_app.db.batches.distinct("mentor_id", session_filter(selected_session))
 
     # Remove None if exists
     assigned_mentors = [m for m in assigned_mentors if m]
@@ -171,7 +445,9 @@ def manage_batches():
     return render_template(
         "admin/batches.html",
         batches=batches,
-        faculty=faculty
+        faculty=faculty,
+        sessions=sessions,
+        selected_session=selected_session
     )
 
 # ===================== ASSIGN MENTOR =====================
@@ -184,6 +460,7 @@ def assign_mentor():
     mentor_id = request.form.get("mentor_id")
 
     batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
+    session_query = {"session": str(batch["session_id"])} if batch and batch.get("session_id") else {}
 
     if not batch:
         return redirect(url_for("admin.manage_batches"))
@@ -195,17 +472,18 @@ def assign_mentor():
             {"$set": {"mentor_id": None}}
         )
         flash("Mentor removed successfully.")
-        return redirect(url_for("admin.manage_batches"))
+        return redirect(url_for("admin.manage_batches", **session_query))
 
     # Check if mentor already assigned to another batch
     already_assigned = current_app.db.batches.find_one({
         "mentor_id": ObjectId(mentor_id),
+        "session_id": batch.get("session_id"),
         "_id": {"$ne": ObjectId(batch_id)}
     })
 
     if already_assigned:
         flash("This mentor is already assigned to another batch.")
-        return redirect(url_for("admin.manage_batches"))
+        return redirect(url_for("admin.manage_batches", **session_query))
 
     # Assign / Replace mentor
     current_app.db.batches.update_one(
@@ -214,15 +492,27 @@ def assign_mentor():
     )
 
     mentor = current_app.db.users.find_one({"_id": ObjectId(mentor_id)})
+    students = list(current_app.db.students.find({"batch_id": ObjectId(batch_id)}).sort("prn", 1))
 
-    if mentor:
+    if mentor and mentor.get("email"):
+        student_rows_html = "".join(
+            f"<tr>"
+            f"<td style='padding:12px;border-top:1px solid #e2e8f0;'>{student.get('prn', '-')}</td>"
+            f"<td style='padding:12px;border-top:1px solid #e2e8f0;'>{student.get('name', '-')}</td>"
+            f"<td style='padding:12px;border-top:1px solid #e2e8f0;'>{student.get('email', 'Not Available')}</td>"
+            f"</tr>"
+            for student in students
+        )
         send_email(
             mentor["email"],
-            "Batch Assigned",
-            f"<h3>You have been assigned to batch: {batch['name']}</h3>"
+            f"Batch Assigned: {batch['name']}",
+            mentor_assignment_email(
+                mentor["name"],
+                batch["name"],
+                batch.get("year"),
+                student_rows_html
+            )
         )
-
-    students = list(current_app.db.students.find({"batch_id": ObjectId(batch_id)}))
 
     print("STUDENTS FOUND:", students)
 
@@ -234,27 +524,30 @@ def assign_mentor():
                 send_email(
                     s["email"],
                     "Mentor Assigned",
-                    f"""
-                    <h3>Mentor Assigned</h3>
-                    <p>Hello {s['name']},</p>
-                    <p>Your mentor is <b>{mentor['name']}</b></p>
-                    """
+                    student_mentor_assigned_email(
+                        s["name"],
+                        mentor["name"],
+                        mentor.get("email", "Not Available"),
+                        batch.get("name"),
+                        batch.get("year")
+                    )
                 )
             except Exception as e:
                 print("EMAIL ERROR:", e)
 
     flash("Mentor updated successfully.")
-    return redirect(url_for("admin.manage_batches"))
+    return redirect(url_for("admin.manage_batches", **session_query))
 
 # ===================== DELETE BATCH =====================
 @admin_bp.route("/delete-batch/<batch_id>")
 @login_required
 @role_required("admin")
 def delete_batch(batch_id):
+    batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
+    session_query = {"session": str(batch["session_id"])} if batch and batch.get("session_id") else {}
     current_app.db.batches.delete_one({"_id": ObjectId(batch_id)})
-    current_app.db.deadlines.delete_many({"batch_id": ObjectId(batch_id)})
     flash("Batch deleted.")
-    return redirect(url_for("admin.manage_batches"))
+    return redirect(url_for("admin.manage_batches", **session_query))
 
 
 # ===================== STAGE MANAGEMENT =====================
@@ -262,14 +555,16 @@ def delete_batch(batch_id):
 @login_required
 @role_required("admin")
 def manage_stages():
+    selected_session_id = request.values.get("session")
+    sessions, selected_session = get_selected_session(selected_session_id)
 
     # -------- Add New Stage --------
     if request.method == "POST" and "name" in request.form:
         name = request.form["name"].strip()
 
         if not name:
-            flash("Stage name cannot be empty.")
-            return redirect(url_for("admin.manage_stages"))
+            flash("Progress Report name cannot be empty.")
+            return redirect(url_for("admin.manage_stages", session=str(selected_session["_id"])))
 
         last_stage = current_app.db.stages.find_one(sort=[("order", -1)])
         next_order = last_stage["order"] + 1 if last_stage else 1
@@ -279,30 +574,23 @@ def manage_stages():
             "order": next_order
         })
 
-        flash("Stage added successfully.")
-        return redirect(url_for("admin.manage_stages"))
+        flash("Progress Report added successfully.")
+        return redirect(url_for("admin.manage_stages", session=str(selected_session["_id"])))
 
     # -------- GET DATA --------
-    selected_batch_id = request.args.get("batch")
-
-    batches = list(current_app.db.batches.find().sort("created_at", -1))
     stages = list(current_app.db.stages.find().sort("order", 1))
 
     deadline_dict = {}
+    deadlines = current_app.db.deadlines.find(get_session_deadline_query(selected_session["_id"]))
 
-    if selected_batch_id:
-        deadlines = current_app.db.deadlines.find({
-            "batch_id": ObjectId(selected_batch_id)
-        })
-
-        for d in deadlines:
-            deadline_dict[str(d["stage_id"])] = d["deadline"].strftime("%Y-%m-%d")
+    for d in deadlines:
+        deadline_dict[str(d["stage_id"])] = d["deadline"].strftime("%Y-%m-%d")
 
     return render_template(
         "admin/stages.html",
         stages=stages,
-        batches=batches,
-        selected_batch_id=selected_batch_id,
+        sessions=sessions,
+        selected_session=selected_session,
         deadline_dict=deadline_dict
     )
 
@@ -313,28 +601,33 @@ def manage_stages():
 @role_required("admin")
 def save_single_deadline():
 
-    batch_id = request.form.get("batch_id")
     stage_id = request.form.get("stage_id")
     deadline_value = request.form.get("deadline")
+    session_id = request.form.get("session_id")
 
-    if not batch_id or not stage_id:
+    if not session_id or not stage_id:
         return redirect(url_for("admin.manage_stages"))
 
     if deadline_value:
         deadline_date = datetime.strptime(deadline_value, "%Y-%m-%d")
 
         current_app.db.deadlines.update_one(
+            get_session_deadline_query(ObjectId(session_id), ObjectId(stage_id)),
             {
-                "batch_id": ObjectId(batch_id),
-                "stage_id": ObjectId(stage_id)
-            },
-            {
-                "$set": {"deadline": deadline_date}
+                "$set": {
+                    "session_id": ObjectId(session_id),
+                    "stage_id": ObjectId(stage_id),
+                    "deadline": deadline_date
+                }
             },
             upsert=True
         )
 
-    return redirect(url_for("admin.manage_stages", batch=batch_id))
+    redirect_kwargs = {}
+    if session_id:
+        redirect_kwargs["session"] = session_id
+
+    return redirect(url_for("admin.manage_stages", **redirect_kwargs))
 
 
 # ===================== DRAG & DROP REORDER =====================
@@ -371,20 +664,37 @@ def delete_stage(stage_id):
 @login_required
 @role_required("admin")
 def manage_faculty():
+    faculty_list = list(current_app.db.users.find({"role": "faculty"}))
+    form_data = {"name": "", "email": ""}
 
     if request.method == "POST":
         name = request.form["name"].strip()
-        email = request.form["email"].strip()
+        email = request.form["email"].strip().lower()
         password = request.form["password"]
+        form_data = {"name": name, "email": email}
 
         if not name or not email or not password:
-            flash("All fields are required.")
-            return redirect(url_for("admin.manage_faculty"))
+            flash("All fields are required.", "danger")
+            return render_template("admin/faculty.html", faculty=faculty_list, form_data=form_data)
 
-        existing = current_app.db.users.find_one({"email": email})
+        if not is_valid_email(email):
+            flash("Username must be a valid email address.", "danger")
+            return render_template("admin/faculty.html", faculty=faculty_list, form_data=form_data)
+
+        password_error = validate_password_rules(password)
+        if password_error:
+            flash(password_error, "danger")
+            return render_template("admin/faculty.html", faculty=faculty_list, form_data=form_data)
+
+        existing = current_app.db.users.find_one({
+            "email": {
+                "$regex": f"^{re.escape(email)}$",
+                "$options": "i"
+            }
+        })
         if existing:
-            flash("Faculty already exists.")
-            return redirect(url_for("admin.manage_faculty"))
+            flash("Faculty already exists.", "danger")
+            return render_template("admin/faculty.html", faculty=faculty_list, form_data=form_data)
 
         hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
 
@@ -396,12 +706,19 @@ def manage_faculty():
             "created_at": datetime.utcnow()
         })
 
-        flash("Faculty created successfully.")
+        mail_sent = send_email(
+            email,
+            "Your Faculty Account Credentials",
+            faculty_welcome_email(name, email, password)
+        )
+
+        if mail_sent:
+            flash("Faculty created successfully and welcome email sent.", "success")
+        else:
+            flash("Faculty created successfully, but the welcome email could not be sent. Please check mail settings.", "warning")
         return redirect(url_for("admin.manage_faculty"))
 
-    faculty_list = list(current_app.db.users.find({"role": "faculty"}))
-
-    return render_template("admin/faculty.html", faculty=faculty_list)
+    return render_template("admin/faculty.html", faculty=faculty_list, form_data=form_data)
 
 
 @admin_bp.route("/faculty/profile", methods=["GET", "POST"])
@@ -412,6 +729,7 @@ def faculty_profile():
     faculty = current_app.db.users.find_one({
         "_id": ObjectId(current_user.id)
     })
+    batch, _, _ = get_faculty_assigned_batch(faculty["_id"], request.args.get("session"))
 
     if request.method == "POST":
 
@@ -431,7 +749,7 @@ def faculty_profile():
         flash("Profile updated successfully")
         return redirect(url_for("admin.faculty_profile"))
 
-    return render_template("faculty/profile.html", faculty=faculty)
+    return render_template("faculty/profile.html", faculty=faculty, batch=batch)
 
 
 # ===================== DELETE FACULTY =====================
@@ -451,10 +769,7 @@ def delete_faculty(faculty_id):
 def faculty_dashboard():
 
     mentor_id = ObjectId(current_user.id)
-
-    batch = current_app.db.batches.find_one({
-        "mentor_id": mentor_id
-    })
+    batch, _, _ = get_faculty_assigned_batch(mentor_id, request.args.get("session"))
 
     students = []
     stages = list(current_app.db.stages.find().sort("order", 1))
@@ -474,9 +789,9 @@ def faculty_dashboard():
         key = str(s["student_id"]) + "_" + str(s["stage_id"])
         submission_dict[key] = s
 
-    deadlines = list(current_app.db.deadlines.find({
-        "batch_id": batch["_id"]
-    })) if batch else []
+    deadlines = list(current_app.db.deadlines.find(
+        get_session_deadline_query(batch["session_id"])
+    )) if batch and batch.get("session_id") else []
 
     deadline_dict = {}
 
@@ -536,18 +851,25 @@ def faculty_dashboard():
 @role_required("admin")
 def manage_students():
 
-    students = list(current_app.db.students.find())
-    # print("STUDENTS:", students)
+    selected_session_id = request.args.get("session")
+    sessions, selected_session = get_selected_session(selected_session_id)
 
-    batches = list(current_app.db.batches.find())
+    students = list(current_app.db.students.find(session_filter(selected_session)).sort("prn", 1))
+
+    batches = list(current_app.db.batches.find(session_filter(selected_session)).sort("created_at", -1))
 
     # Optional: map batch_id → batch name if you still need it elsewhere
-    batch_map = {str(b["_id"]): b["name"] for b in batches}
+    batch_map = {str(batch["_id"]): batch["name"] for batch in batches}
+
+    for student in students:
+        student["batch_name"] = batch_map.get(str(student.get("batch_id")), "Not Assigned")
 
     return render_template(
         "admin/students.html",
         students=students,
-        batches=batches
+        batches=batches,
+        sessions=sessions,
+        selected_session=selected_session
     )
 
 # @admin_bp.route("/add-student", methods=["POST"])
@@ -602,20 +924,49 @@ def add_student():
     name = request.form["name"]
     prn = request.form["prn"]
     email = request.form["email"].strip().replace(" ", "")
-    year = request.form["year"]
     batch_id = request.form["batch_id"]
+    session_id = request.form["session_id"]
+    session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
 
-    existing = current_app.db.students.find_one({"prn": prn})
+    if not session:
+        flash("Select a valid academic session.", "warning")
+        return redirect(url_for("admin.manage_students"))
+
+    batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
+
+    if not batch or batch.get("session_id") != session["_id"]:
+        flash("Select a batch from the active academic session.", "warning")
+        return redirect(url_for("admin.manage_students", session=str(session["_id"])))
+
+    existing = current_app.db.students.find_one({
+        "prn": prn,
+        "$or": [
+            {"session_id": session["_id"]},
+            {
+                "session_id": {"$exists": False},
+                "year": session["name"]
+            }
+        ]
+    })
 
     if existing:
-        flash("Student already exists")
-        return redirect(url_for("admin.manage_students"))
+        flash("Student with this PRN already exists in the selected session.")
+        return redirect(url_for("admin.manage_students", session=str(session["_id"])))
 
-    existing_email = current_app.db.students.find_one({"email": email})
+    existing_email = current_app.db.students.find_one({
+        "email": email,
+        "$or": [
+            {"session_id": session["_id"]},
+            {
+                "session_id": {"$exists": False},
+                "year": session["name"]
+            }
+        ]
+    })
 
     if existing_email:
-        flash("Email already exists", "warning")
-        return redirect(url_for("admin.manage_students"))
+        flash("Email already exists in the selected session", "warning")
+        return redirect(url_for("admin.manage_students", session=str(session["_id"])))
 
     # ✅ ALWAYS DEFINE BEFORE USING
     raw_password = prn
@@ -625,8 +976,9 @@ def add_student():
         "name": name,
         "prn": prn,
         "email": email,
-        "year": year,
-        "batch_id": ObjectId(batch_id),
+        "year": session["name"],
+        "session_id": session["_id"],
+        "batch_id": batch["_id"],
         "role": "student",
         "password": password,
         "password_changed": False,
@@ -649,7 +1001,7 @@ def add_student():
 
     flash("Student added successfully")
 
-    return redirect(url_for("admin.manage_students"))
+    return redirect(url_for("admin.manage_students", session=str(session["_id"])))
 
 
 # ===================== UPLOAD STUDENTS =====================
@@ -659,6 +1011,17 @@ def add_student():
 def upload_students():
 
     file = request.files["file"]
+    session_id = request.form.get("session_id")
+
+    if not session_id:
+        flash("Select an academic session before bulk upload.", "warning")
+        return redirect(url_for("admin.manage_students"))
+
+    session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
+
+    if not session:
+        flash("Selected academic session was not found.", "warning")
+        return redirect(url_for("admin.manage_students"))
 
     # df = pd.read_excel(file)
     # df.columns = df.columns.str.strip().str.lower()  # remove any leading/trailing spaces from column names
@@ -719,18 +1082,61 @@ def upload_students():
     #             )  
 
 
-    df = pd.read_excel(file)
+    df = pd.read_excel(file, header=None)
 
-    print("COLUMNS:", df.columns)
+    column_aliases = {
+        "prn": ["prn", "rollno", "rollnumber", "studentid"],
+        "name": ["name", "studentname", "fullname"],
+        "email": ["email", "emailid", "emailaddress", "mail"]
+    }
+
+    header_row_index = None
+    original_columns = []
+    normalized_columns = []
+
+    for idx in range(min(len(df), 10)):
+        row_values = ["" if pd.isna(value) else str(value).strip() for value in df.iloc[idx].tolist()]
+        normalized_row = [normalize_excel_header(value) for value in row_values]
+
+        has_prn = any(value in column_aliases["prn"] for value in normalized_row)
+        has_name = any(value in column_aliases["name"] for value in normalized_row)
+
+        if has_prn and has_name:
+            header_row_index = idx
+            original_columns = row_values
+            normalized_columns = normalized_row
+            break
+
+    if header_row_index is None:
+        flash("Excel must contain PRN and Name columns. Column order can be anything.", "warning")
+        return redirect(url_for("admin.manage_students", session=str(session["_id"])))
+
+    df = df.iloc[header_row_index + 1:].reset_index(drop=True)
+    df.columns = normalized_columns
+
+    resolved_columns = {}
+    for key, aliases in column_aliases.items():
+        resolved_columns[key] = next((alias for alias in aliases if alias in normalized_columns), None)
+
+    if not resolved_columns["prn"] or not resolved_columns["name"]:
+        flash("Excel must contain PRN and Name columns. Column order can be anything.", "warning")
+        return redirect(url_for("admin.manage_students", session=str(session["_id"])))
+
+    print("COLUMNS:", original_columns)
     print(df.head())
+
+    inserted_count = 0
+    skipped_prns = []
 
     for _, row in df.iterrows():
 
         # ✅ ACCESS BY POSITION (SAFE)
-        prn = str(row.iloc[0]).strip()
-        name = str(row.iloc[1]).strip()
-        email = str(row.iloc[2]).strip() if len(row) > 2 else ""
-        year = str(row.iloc[3]).strip() if len(row) > 3 else ""
+        prn = str(row.get(resolved_columns["prn"], "")).strip()
+        name = str(row.get(resolved_columns["name"], "")).strip()
+        email = ""
+        if resolved_columns["email"]:
+            email = str(row.get(resolved_columns["email"], "")).strip()
+        year = session["name"]
 
         print("PROCESSING:", prn, name)
 
@@ -744,10 +1150,20 @@ def upload_students():
         raw_password = prn
         password = bcrypt.generate_password_hash(raw_password).decode("utf-8")
 
-        existing = current_app.db.students.find_one({"prn": prn})
+        existing = current_app.db.students.find_one({
+            "prn": prn,
+            "$or": [
+                {"session_id": session["_id"]},
+                {
+                    "session_id": {"$exists": False},
+                    "year": session["name"]
+                }
+            ]
+        })
 
         if existing:
             print("SKIPPED:", prn)
+            skipped_prns.append(prn)
             continue
 
         current_app.db.students.insert_one({
@@ -755,6 +1171,7 @@ def upload_students():
             "name": name,
             "email": email,
             "year": year,
+            "session_id": session["_id"],
             "batch_id": None,
             "role": "student",
             "password": password,
@@ -763,10 +1180,26 @@ def upload_students():
         })
 
         print("INSERTED:", prn)
+        inserted_count += 1
 
-    flash("Students uploaded successfully")
+    if inserted_count and skipped_prns:
+        flash(
+            f"{inserted_count} students uploaded. {len(skipped_prns)} skipped because PRN already exists: {', '.join(skipped_prns[:5])}"
+            + (" ..." if len(skipped_prns) > 5 else ""),
+            "warning"
+        )
+    elif inserted_count:
+        flash(f"{inserted_count} students uploaded successfully.", "success")
+    elif skipped_prns:
+        flash(
+            f"No new students were added. All rows were skipped because PRN already exists: {', '.join(skipped_prns[:5])}"
+            + (" ..." if len(skipped_prns) > 5 else ""),
+            "warning"
+        )
+    else:
+        flash("No valid student rows were found in the uploaded sheet.", "warning")
 
-    return redirect(url_for("admin.manage_students"))
+    return redirect(url_for("admin.manage_students", session=str(session["_id"])))
 
 @admin_bp.route("/download-template")
 @login_required
@@ -776,8 +1209,7 @@ def download_template():
     df = pd.DataFrame({
         "PRN": [],
         "Name": [],
-        "Email": [],
-        "Year": []
+        "Email": []
     })
 
     path = "student_template.xlsx"
@@ -793,6 +1225,8 @@ def download_template():
 def assign_students(batch_id):
 
     student_ids = request.form.getlist("students")
+    batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
+    session_query = {"session": str(batch["session_id"])} if batch and batch.get("session_id") else {}
 
     for sid in student_ids:
 
@@ -803,7 +1237,7 @@ def assign_students(batch_id):
 
     flash("Students assigned successfully")
 
-    return redirect(url_for("admin.manage_batches"))
+    return redirect(url_for("admin.manage_batches", **session_query))
 
 # ---------------- ASSIGN STUDENTS PAGE ----------------
 @admin_bp.route("/assign-students/<batch_id>")
@@ -813,17 +1247,34 @@ def assign_students_page(batch_id):
 
     batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
 
+    if not batch:
+        flash("Batch not found.", "warning")
+        return redirect(url_for("admin.manage_batches"))
+
     students = list(current_app.db.students.find({
-        "$or": [
-            {"batch_id": None},
-            {"batch_id": ObjectId(batch_id)}
+        "$and": [
+            session_filter({
+                "_id": batch.get("session_id"),
+                "name": batch.get("year")
+            }),
+            {
+                "$or": [
+                    {"batch_id": None},
+                    {"batch_id": ObjectId(batch_id)}
+                ]
+            }
         ]
-    }))
+    }).sort("prn", 1))
+
+    selected_student_ids = {
+        str(student["_id"]) for student in students if student.get("batch_id") == batch["_id"]
+    }
 
     return render_template(
         "admin/assign_students.html",
         batch=batch,
-        students=students
+        students=students,
+        selected_student_ids=selected_student_ids
     )
 
 # ---------------- SAVE ASSIGNED STUDENTS ----------------
@@ -833,6 +1284,14 @@ def assign_students_page(batch_id):
 def save_assigned_students(batch_id):
 
     student_ids = request.form.getlist("students")
+    batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
+    session_query = {"session": str(batch["session_id"])} if batch and batch.get("session_id") else {}
+
+    if not batch:
+        flash("Batch not found.", "warning")
+        return redirect(url_for("admin.manage_batches"))
+
+    normalized_student_ids = [ObjectId(student_id) for student_id in student_ids]
 
     # remove students already in this batch
     current_app.db.students.update_many(
@@ -841,14 +1300,12 @@ def save_assigned_students(batch_id):
     )
 
     # assign selected students
-    for sid in student_ids:
+    for sid in normalized_student_ids:
         current_app.db.students.update_one(
-            {"_id": ObjectId(sid)},
+            {"_id": sid},
             {"$set": {"batch_id": ObjectId(batch_id)}}
         )
  
-    batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
-
     mentor = None
     
     if batch and batch.get("mentor_id"):
@@ -856,9 +1313,9 @@ def save_assigned_students(batch_id):
 
         # print("MENTOR:", mentor)
 
-    for sid in student_ids:
+    for sid in normalized_student_ids:
 
-        student = current_app.db.students.find_one({"_id": ObjectId(sid)})
+        student = current_app.db.students.find_one({"_id": sid})
 
         print("STUDENT:", student)
 
@@ -870,12 +1327,13 @@ def save_assigned_students(batch_id):
                 send_email(
                     student["email"],
                     "Mentor Assigned",
-                    f"""
-                    <h3>Mentor Assigned</h3>
-                    <p>Hello {student['name']},</p>
-                    <p>Your mentor is <b>{mentor['name']}</b></p>
-                    <p>Email: {mentor['email']}</p>
-                    """
+                    student_mentor_assigned_email(
+                        student["name"],
+                        mentor["name"],
+                        mentor.get("email", "Not Available"),
+                        batch.get("name"),
+                        batch.get("year")
+                    )
                 )
             except Exception as e:
                 print("EMAIL ERROR:", e)
@@ -900,25 +1358,24 @@ def save_assigned_students(batch_id):
             student_list_html = ""
 
             for s in assigned_students:
-                student_list_html += f"<li>{s['name']} ({s['prn']})</li>"
+                student_list_html += (
+                    f"<tr>"
+                    f"<td style='padding:12px;border-top:1px solid #e2e8f0;'>{s.get('prn', '-')}</td>"
+                    f"<td style='padding:12px;border-top:1px solid #e2e8f0;'>{s.get('name', '-')}</td>"
+                    f"<td style='padding:12px;border-top:1px solid #e2e8f0;'>{s.get('email', 'Not Available')}</td>"
+                    f"</tr>"
+                )
 
             try:
                 send_email(
                     mentor["email"],
-                    "Students Assigned to You",
-                    f"""
-                    <h3>Students Assigned</h3>
-
-                    <p>Hello {mentor['name']},</p>
-
-                    <p>You have been assigned the following students:</p>
-
-                    <ul>
-                        {student_list_html}
-                    </ul>
-
-                    <p><b>Batch:</b> {batch['name']}</p>
-                    """
+                    f"Updated Student Roster: {batch['name']}",
+                    mentor_assignment_email(
+                        mentor["name"],
+                        batch["name"],
+                        batch.get("year"),
+                        student_list_html
+                    )
                 )
 
                 print("FACULTY EMAIL SENT:", mentor["email"])
@@ -927,9 +1384,12 @@ def save_assigned_students(batch_id):
                 print("EMAIL ERROR (FACULTY):", e)
 
 
-    flash("Students assigned successfully")
+    if normalized_student_ids:
+        flash("Students assigned successfully", "success")
+    else:
+        flash("No students were selected. Existing assignments for this batch were cleared.", "warning")
 
-    return redirect(url_for("admin.manage_batches"))
+    return redirect(url_for("admin.manage_batches", **session_query))
 
 # ---------------- FACULTY STUDENTS ----------------
 @admin_bp.route("/faculty/students")
@@ -943,12 +1403,10 @@ def faculty_students():
         "_id": ObjectId(faculty_id)
     })
 
-    batch = current_app.db.batches.find_one({
-        "mentor_id": ObjectId(current_user.id)
-    })
+    batch, _, _ = get_faculty_assigned_batch(ObjectId(current_user.id), request.args.get("session"))
 
     if not batch:
-        return render_template("faculty/students.html", students=[])
+        return render_template("faculty/students.html", students=[], batch=None)
 
     students = list(current_app.db.students.find({
         "batch_id": batch["_id"]
@@ -979,6 +1437,8 @@ def update_faculty_profile():
     name = request.form.get("name")
     email = request.form.get("email")
     file = request.files.get("photo")
+    new_password = request.form.get("new_password", "").strip()
+    confirm_password = request.form.get("confirm_password", "").strip()
 
     update_data = {
         "name": name,
@@ -986,9 +1446,21 @@ def update_faculty_profile():
     }
 
     if file and file.filename:
-        filename = file.filename
-        file.save(os.path.join(current_app.config["UPLOAD_FOLDER"], filename))
+        filename = save_profile_photo(file, current_user.id)
         update_data["photo"] = filename
+
+    if new_password or confirm_password:
+        if new_password != confirm_password:
+            flash("New password and confirm password must match.", "danger")
+            return redirect(url_for("admin.faculty_profile"))
+
+        password_error = validate_password_rules(new_password)
+        if password_error:
+            flash(password_error, "danger")
+            return redirect(url_for("admin.faculty_profile"))
+
+        update_data["password"] = bcrypt.generate_password_hash(new_password).decode("utf-8")
+        update_data["password_changed"] = True
 
     current_app.db.users.update_one(
         {"_id": ObjectId(current_user.id)},
@@ -1006,10 +1478,7 @@ def update_faculty_profile():
 def mentor_submissions():
 
     mentor_id = ObjectId(current_user.id)
-
-    batch = current_app.db.batches.find_one({
-        "mentor_id": mentor_id
-    })
+    batch, _, _ = get_faculty_assigned_batch(mentor_id, request.args.get("session"))
 
     if not batch:
         flash("No batch assigned")
@@ -1141,7 +1610,7 @@ def download_file(filename):
     return send_from_directory(
         current_app.config["UPLOAD_FOLDER"],
         filename,
-        as_attachment=False
+        as_attachment=True
     )
 
 @admin_bp.route("/notifications/read", methods=["POST"])

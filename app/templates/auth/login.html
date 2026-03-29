@@ -6,25 +6,46 @@
 
     <div class="login-card">
 
-        <img src="{{ url_for('static', filename='images/ZealInstitute_logo.png') }}" class="login-logo">
+        <div class="login-brand-row">
+            <img src="{{ url_for('static', filename='images/ZIBACAR.png') }}" class="login-logo" alt="ZIBACAR">
+            <div class="login-brand-copy">
+                <span class="login-kicker">Academic Workflow Platform</span>
+                <h4 class="login-title">Welcome Back</h4>
+                <p class="login-subtitle">Sign in to manage students, submissions, batches, and mentoring updates in one place.</p>
+            </div>
+        </div>
 
-        <h4 class="login-title">Project Management Portal</h4>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-container">
+            {% for category, message in messages %}
+            <div class="flash-message {{ category }}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
 
         <form method="POST">
 
             <div class="mb-3">
                 <label>PRN / Email</label>
-                <input type="text" name="email" class="form-control" placeholder="Enter PRN or Email" required>
+                <input type="text" name="email" class="form-control" placeholder="Enter your PRN or official email" required>
             </div>
 
             <div class="mb-3">
                 <label>Password</label>
-                <input type="password" name="password" class="form-control" placeholder="Enter Password" required>
+                <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
             </div>
 
-            <button type="submit" class="btn btn-primary w-100">Login</button>
+            <button type="submit" class="btn btn-primary w-100">Sign In</button>
 
         </form>
+
+        <div class="login-footer-note">
+            Secure access for administrators, faculty mentors, and students.
+        </div>
 
     </div>
 

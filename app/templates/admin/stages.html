@@ -2,52 +2,53 @@
 
 {% block content %}
 
-<h2 class="page-title">Global Stage Management</h2>
+<h2 class="page-title">Global Progress Report Management</h2>
+
+<div class="card">
+    <div class="session-toolbar">
+        <div>
+            <h4>Academic Sessions</h4>
+            <p class="section-subtitle">Choose the session before setting one shared deadline plan for all batches in that academic session.</p>
+        </div>
+
+        <div class="session-toolbar-actions">
+            <form method="GET" action="{{ url_for('admin.manage_stages') }}" class="session-filter-form">
+                <select name="session" onchange="this.form.submit()">
+                    {% for session in sessions %}
+                    <option value="{{ session._id }}" {% if selected_session and session._id == selected_session._id %}selected{% endif %}>
+                        {{ session.name }}{% if session.is_active %} • Current{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- Add Stage -->
 <div class="card">
     <form method="POST" class="inline-form">
+        <input type="hidden" name="session" value="{{ selected_session._id }}">
         <input type="text"
                name="name"
-               placeholder="Enter stage name"
+               placeholder="Enter Progress Report name"
                required>
 
         <button type="submit" class="btn-success">
-            Add Stage
+            Add Progress Report
         </button>
-    </form>
-</div>
-
-<!-- Select Batch -->
-<div class="card">
-    <form method="GET">
-        <label>Select Batch:</label>
-        <select name="batch"
-                onchange="this.form.submit()"
-                class="form-select-custom">
-
-            <option value="">-- Select Batch --</option>
-
-            {% for batch in batches %}
-            <option value="{{ batch._id }}"
-                {% if selected_batch_id == batch._id|string %}
-                    selected
-                {% endif %}>
-                {{ batch.name }}
-            </option>
-            {% endfor %}
-        </select>
     </form>
 </div>
 
 <!-- Stage Table -->
 <div class="card">
     <h4>Drag & Drop to Reorder</h4>
+    <p class="section-subtitle">The deadlines below apply to every batch inside <strong>{{ selected_session.name }}</strong>.</p>
 
     <table class="custom-table">
         <thead>
             <tr>
-                <th>Stage</th>
+                <th>Progress Report</th>
                 <th>Deadline</th>
                 <th width="120">Action</th>
             </tr>
@@ -59,27 +60,23 @@
             <td>{{ stage.name }}</td>
 
             <td>
-                {% if selected_batch_id %}
-                    <form method="POST"
-                          action="{{ url_for('admin.save_single_deadline') }}"
-                          class="deadline-form">
+                <form method="POST"
+                      action="{{ url_for('admin.save_single_deadline') }}"
+                      class="deadline-form">
 
-                        <input type="hidden"
-                               name="stage_id"
-                               value="{{ stage._id }}">
+                    <input type="hidden"
+                           name="stage_id"
+                           value="{{ stage._id }}">
 
-                        <input type="hidden"
-                               name="batch_id"
-                               value="{{ selected_batch_id }}">
+                    <input type="hidden"
+                           name="session_id"
+                           value="{{ selected_session._id }}">
 
-                        <input type="date"
-                               name="deadline"
-                               value="{{ deadline_dict.get(stage._id|string) }}"
-                               onchange="this.form.submit()">
-                    </form>
-                {% else %}
-                    <span class="text-muted">Select batch first</span>
-                {% endif %}
+                    <input type="date"
+                           name="deadline"
+                           value="{{ deadline_dict.get(stage._id|string) }}"
+                           onchange="this.form.submit()">
+                </form>
             </td>
 
             <td>

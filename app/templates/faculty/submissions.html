@@ -39,7 +39,7 @@
 
 {% if file %}
 <button class="btn-view"
-onclick="openFileViewer('/admin/view-file/{{ file }}')">
+onclick="openFileViewer('/admin/view-file/{{ file }}', '/admin/download/{{ file }}')">
 <i class="fas fa-eye"></i> View
 </button>
 {% else %}
@@ -59,33 +59,37 @@ onclick="openFileViewer('/admin/view-file/{{ file }}')">
 <td>
 {% if sub.status == "approved" %}
 <span class="status-badge approved">
-✔ Approved
+Approved
 </span>
 
 {% elif sub.status == "rejected" %}
 <span class="status-badge rejected">
-✖ Rejected
+Rejected
 </span>
 
 {% else %}
 <span class="status-badge pending">
-⏳ Pending
+Pending
 </span>
 {% endif %}
 </td>
 
 <td class="action-buttons">
-
+<div class="action-buttons-row">
+{% if sub.status == "pending" %}
 <button class="btn-approve"
 onclick="openRemark('{{ sub._id }}','approve')">
-✔ Approve
+Approve
 </button>
 
 <button class="btn-reject"
 onclick="openRemark('{{ sub._id }}','reject')">
-✖ Reject
+Reject
 </button>
-
+{% else %}
+<span class="text-muted">Reviewed</span>
+{% endif %}
+</div>
 </td>
 
 </tr>
@@ -98,56 +102,31 @@ onclick="openRemark('{{ sub._id }}','reject')">
 
 </div>
 
-<!-- 🔥 FILE VIEWER MODAL -->
-
 <div id="fileModal" class="file-modal" style="display:none;">
-
 <div class="file-modal-content">
-
-<span class="close-btn" onclick="closeViewer()">×</span>
-
+<span class="close-btn" onclick="closeViewer()">&times;</span>
 <div id="fileContainer"></div>
-
 <div class="file-footer">
 <a id="downloadBtn" class="btn-download" target="_blank">Download</a>
 </div>
-
 </div>
-
 </div>
-
-<!-- 🔥 REMARK MODAL -->
 
 <div id="remarkModal" class="remark-modal">
-
 <div class="remark-content">
-
 <h4>Mentor Remark</h4>
-
 <form id="remarkForm" method="POST">
-
 <textarea name="remark" placeholder="Write feedback..." required></textarea>
-
 <div class="remark-actions">
-
 <button type="submit" class="btn-approve">Submit</button>
-
 <button type="button" class="btn-reject" onclick="closeRemark()">Cancel</button>
-
 </div>
-
 </form>
-
 </div>
-
 </div>
-
-<!-- 🔥 JS -->
 
 <script>
-
 function openRemark(id, type){
-
 const modal = document.getElementById("remarkModal");
 const form = document.getElementById("remarkForm");
 
@@ -164,28 +143,19 @@ function closeRemark(){
 document.getElementById("remarkModal").style.display = "none";
 }
 
-
-// 🔥 FILE VIEWER (FINAL FIX)
-function openFileViewer(url){
-
+function openFileViewer(url, downloadUrl){
 let modal = document.getElementById("fileModal");
 let container = document.getElementById("fileContainer");
 let downloadBtn = document.getElementById("downloadBtn");
 
-downloadBtn.href = url;
-
-// ✅ IMPORTANT: direct iframe (no Google viewer)
-container.innerHTML = `
-<iframe src="${url}" width="100%" height="550px" style="border:none;"></iframe>
-`;
-
+downloadBtn.href = downloadUrl;
+container.innerHTML = `<iframe src="${url}" width="100%" height="550px" style="border:none;"></iframe>`;
 modal.style.display = "flex";
 }
 
 function closeViewer(){
 document.getElementById("fileModal").style.display = "none";
 }
-
 </script>
 
 {% endblock %}

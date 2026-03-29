@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 from flask_login import login_user, logout_user, login_required, current_user
+from bson.objectid import ObjectId
 from app import bcrypt
 from app.models.user_model import User
 
@@ -11,23 +12,38 @@ def login():
 
     if request.method == "POST":
 
-        username = request.form["email"]   # email OR prn
+        username = request.form["email"].strip()
         password = request.form["password"]
 
-        # Check admin/faculty (email login)
+        if not username or not password:
+            flash("Enter both your PRN/email and password.", "warning")
+            return render_template("auth/login.html")
+
         user_data = current_app.db.users.find_one({"email": username})
 
-        # If not found → check students (PRN login)
         if not user_data:
             user_data = current_app.db.students.find_one({"prn": username})
 
-        if user_data and bcrypt.check_password_hash(user_data["password"], password):
+        if not user_data:
+            flash("No account found with that PRN or email.", "warning")
+            return render_template("auth/login.html")
+
+        if bcrypt.check_password_hash(user_data["password"], password):
 
             user = User(user_data)
             login_user(user)
 
             if not user_data.get("password_changed", True):
-                return redirect(url_for("auth.change_password"))
+                flash("Please update your password from your profile settings before continuing.", "warning")
+
+                if user.role == "admin":
+                    return redirect(url_for("admin.admin_profile"))
+
+                elif user.role == "faculty":
+                    return redirect(url_for("admin.faculty_profile"))
+
+                elif user.role == "student":
+                    return redirect(url_for("student.student_profile"))
 
             if user.role == "admin":
                 return redirect(url_for("admin.dashboard"))
@@ -38,9 +54,10 @@ def login():
             elif user.role == "student":
                 return redirect(url_for("student.dashboard"))
 
-        flash("Invalid credentials")
+        flash("Incorrect password. Please try again.", "danger")
 
     return render_template("auth/login.html")
+
 
 @auth_bp.route("/change-password", methods=["GET", "POST"])
 @login_required

@@ -2,6 +2,7 @@
 {% block content %}
 
 <h2 class="page-title">Students</h2>
+<p class="section-subtitle">Assigned batch: <strong>{{ batch.name if batch else "Not Assigned" }}</strong></p>
 
 <div class="card-modern">
 
@@ -21,18 +22,20 @@
 {% for s in students %}
 <tr>
 
-<td class="student-name">
+<td>
+<div class="student-name">
 <i class="fas fa-user-circle"></i>
-{{ s.name }}
+<span>{{ s.name }}</span>
+</div>
 </td>
 
 <td>{{ s.prn }}</td>
 
 <td>{{ s.year }}</td>
 
-<td>
-<div class="progress-circle" data-progress="{{ s.progress or 0 }}">
-    <span>{{ s.progress or 0 }}%</span>
+<td class="progress-cell">
+<div class="progress-circle progress-circle-modern" style="--progress: {{ s.progress or 0 }}%;">
+    <span class="circle-value">{{ s.progress or 0 }}%</span>
 </div>
 </td>
 

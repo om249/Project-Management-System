@@ -3,6 +3,8 @@ from flask_login import LoginManager, current_user
 from flask_bcrypt import Bcrypt
 from flask_mail import Mail
 from flask_pymongo import PyMongo
+from datetime import timezone
+from zoneinfo import ZoneInfo
 from config import Config
 from app.models.user_model import User
 from app.services.notification_service import get_notifications, create_notification, mark_notifications_read
@@ -42,6 +44,14 @@ def create_app():
 
     @app.context_processor
     def inject_notifications():
+        def format_notification_time(dt):
+            if not dt:
+                return "Just now"
+
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+
+            return dt.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p")
 
         if current_user.is_authenticated:
 
@@ -49,12 +59,14 @@ def create_app():
 
             return dict(
                 notifications=notifications,
-                unread_count=unread_count
+                unread_count=unread_count,
+                format_notification_time=format_notification_time
             )
 
         return dict(
             notifications=[],
-            unread_count=0
+            unread_count=0,
+            format_notification_time=format_notification_time
         )
 
     return app

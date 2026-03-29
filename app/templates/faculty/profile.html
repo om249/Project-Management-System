@@ -3,76 +3,280 @@
 
 <h2 class="page-title">My Profile</h2>
 
-<div class="profile-container">
+<section class="profile-shell">
 
-    <!-- LEFT SIDE -->
-    <div class="profile-left">
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="flash-container">
+    {% for category, message in messages %}
+    <div class="flash-message {{ category }}">
+        {{ message }}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
 
-        <div class="profile-img-box">
-            {% if faculty.photo %}
-                <img src="{{ url_for('static', filename='uploads/' + faculty.photo) }}">
-            {% else %}
-                <i class="fas fa-user-circle"></i>
-            {% endif %}
+<div class="profile-hero-card card">
+    <div class="profile-hero-main">
+        <div class="profile-avatar-wrap">
+            <div class="profile-avatar-stack">
+                <div class="profile-img-box profile-img-box-lg">
+                    {% if faculty.photo %}
+                        <img src="{{ url_for('static', filename='uploads/' + faculty.photo) }}">
+                    {% else %}
+                        <i class="fas fa-user-circle"></i>
+                    {% endif %}
+                </div>
+                <span class="profile-avatar-note">
+                    <i class="fas fa-camera"></i> Faculty profile photo
+                </span>
+            </div>
         </div>
 
-        <h3>{{ faculty.name }}</h3>
-        <p class="role-badge">Faculty</p>
+        <div class="profile-hero-copy">
+            <span class="profile-kicker">Faculty Workspace</span>
+            <h3>{{ faculty.name }}</h3>
+            <p class="profile-subtitle">
+                Manage your teaching identity, review workflow, and keep your
+                account information polished for daily mentoring tasks.
+            </p>
 
-        <button onclick="toggleEdit()" class="btn-edit">
-            <i class="fas fa-pen"></i> Update Profile
-        </button>
-
+            <div class="profile-chip-row">
+                <span class="profile-chip"><i class="fas fa-envelope"></i> {{ faculty.email }}</span>
+                <span class="profile-chip"><i class="fas fa-layer-group"></i> {{ batch.name if batch else "No Batch Assigned" }}</span>
+                <span class="profile-chip"><i class="fas fa-calendar-check"></i> {{ faculty.created_at.strftime("%d %b %Y") if faculty.created_at else "Recently Added" }}</span>
+            </div>
+        </div>
     </div>
 
-    <!-- RIGHT SIDE -->
-    <div class="profile-right">
-
-        <div class="info-box">
-            <label>Email</label>
-            <p>{{ faculty.email }}</p>
+    <div class="profile-hero-side">
+        <div class="profile-hero-actions">
+            <span class="role-badge">Faculty</span>
+            <button type="button" onclick="toggleEdit()" class="btn-edit">
+                <i class="fas fa-pen"></i> Update Profile
+            </button>
         </div>
-
-        <div class="info-box">
-            <label>Assigned Batch</label>
-            <p>{{ batch.name if batch else "Not Assigned" }}</p>
-        </div>
-
-        <div class="info-box">
-            <label>Account Created</label>
-            <p>{{ faculty.created_at.strftime("%d %b %Y") if faculty.created_at else "-" }}</p>
-        </div>
-
     </div>
 
+    <div id="editForm" class="profile-inline-editor" hidden>
+        <div class="profile-panel-head">
+            <h4>Account Settings</h4>
+            <span>Refine your faculty presence and keep your mentor identity current</span>
+        </div>
+
+        <form method="POST"
+              action="{{ url_for('admin.update_faculty_profile') }}"
+              enctype="multipart/form-data"
+              class="profile-form-grid">
+            <div class="profile-form-full profile-editor-layout">
+                <div class="profile-editor-main">
+                    <div class="profile-editor-card">
+                        <div class="profile-panel-head">
+                            <h4>Basic Information</h4>
+                            <span>Displayed across mentoring and review flows</span>
+                        </div>
+
+                        <div class="profile-form-grid">
+                            <div class="profile-field-card">
+                                <label>Full Name</label>
+                                <input type="text" name="name" value="{{ faculty.name }}" required>
+                                <p class="profile-field-help">This name appears in student assignment and notification emails.</p>
+                            </div>
+
+                            <div class="profile-field-card">
+                                <label>Email Address</label>
+                                <input type="email" name="email" value="{{ faculty.email }}" required>
+                                <p class="profile-field-help">Use the inbox where you receive review alerts and roster updates.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-editor-card profile-upload-card">
+                        <div class="profile-upload-head">
+                            <div>
+                                <label>Profile Photo</label>
+                                <p class="section-subtitle">A clear profile image helps students recognize their mentor instantly.</p>
+                            </div>
+                            <div class="profile-image-preview">
+                                {% if faculty.photo %}
+                                <img id="profilePreview" src="{{ url_for('static', filename='uploads/' + faculty.photo) }}" alt="Profile Preview">
+                                {% else %}
+                                <div id="profilePreviewFallback" class="profile-preview-fallback">
+                                    <i class="fas fa-user-circle"></i>
+                                </div>
+                                <img id="profilePreview" alt="Profile Preview" style="display:none;">
+                                {% endif %}
+                            </div>
+                        </div>
+                        <input id="profilePhotoInput" type="file" name="photo" accept="image/*">
+                        <p class="profile-upload-meta">Recommended: square headshot, neutral background, and good visibility.</p>
+                    </div>
+
+                    <div class="profile-editor-card">
+                        <div class="profile-panel-head">
+                            <h4>Change Password</h4>
+                            <span>Keep your faculty account secure from this same settings panel</span>
+                        </div>
+
+                        <div class="profile-form-grid">
+                            <div class="profile-field-card">
+                                <label>New Password</label>
+                                <input type="password" name="new_password" placeholder="Enter new password">
+                                <p class="profile-field-help">Minimum 8 characters, with 1 capital letter, 1 small letter, 1 digit, and 1 symbol.</p>
+                            </div>
+
+                            <div class="profile-field-card">
+                                <label>Confirm Password</label>
+                                <input type="password" name="confirm_password" placeholder="Re-enter new password">
+                                <p class="profile-field-help">Leave these fields empty if you are only updating your profile details.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="profile-editor-side">
+                    <div class="profile-editor-card">
+                        <div class="profile-panel-head">
+                            <h4>Assignment Snapshot</h4>
+                            <span>Read-only faculty context</span>
+                        </div>
+
+                        <div class="profile-readonly-list">
+                            <div class="profile-readonly-item">
+                                <span>Role</span>
+                                <strong>Faculty Member</strong>
+                            </div>
+                            <div class="profile-readonly-item">
+                                <span>Current Batch</span>
+                                <strong>{{ batch.name if batch else "Not Assigned" }}</strong>
+                            </div>
+                            <div class="profile-readonly-item">
+                                <span>Joined On</span>
+                                <strong>{{ faculty.created_at.strftime("%d %b %Y") if faculty.created_at else "Recently Added" }}</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-edit-note">
+                        A complete mentor profile improves the student experience across dashboards, submissions, and email updates.
+                    </div>
+                </div>
+            </div>
+
+            <div class="profile-form-actions profile-form-full">
+                <button type="button" onclick="toggleEdit()" class="btn-edit">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button class="btn-save">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
 </div>
 
-<!-- 🔥 EDIT FORM -->
-<div id="editForm" class="edit-form" style="display:none;">
-
-<form method="POST"
-      action="{{ url_for('admin.update_faculty_profile') }}"
-      enctype="multipart/form-data">
-
-    <input type="text" name="name" value="{{ faculty.name }}" required>
-
-    <input type="email" name="email" value="{{ faculty.email }}" required>
-
-    <input type="file" name="photo">
-
-    <button class="btn-save">
-        <i class="fas fa-save"></i> Save Changes
-    </button>
-
-</form>
-
+<div class="profile-highlight-grid">
+    <div class="profile-highlight-card">
+        <span>Current Batch</span>
+        <strong>{{ batch.name if batch else "Not Assigned" }}</strong>
+        <p>Batch assignment decides which students and stage deadlines you manage.</p>
+    </div>
+    <div class="profile-highlight-card">
+        <span>Communication</span>
+        <strong>{{ faculty.email }}</strong>
+        <p>This email receives mentor assignment notices, submissions, and roster updates.</p>
+    </div>
+    <div class="profile-highlight-card">
+        <span>Mentor Readiness</span>
+        <strong>{{ "Profile Completed" if faculty.photo else "Add Photo" }}</strong>
+        <p>A stronger profile helps students quickly identify their assigned faculty mentor.</p>
+    </div>
 </div>
+
+<div class="profile-detail-grid">
+    <div class="card profile-panel">
+        <div class="profile-panel-head">
+            <h4>Account Details</h4>
+            <span>Professional identity</span>
+        </div>
+
+        <div class="profile-info-grid">
+            <div class="info-box">
+                <label>Full Name</label>
+                <p>{{ faculty.name }}</p>
+            </div>
+
+            <div class="info-box">
+                <label>Email Address</label>
+                <p>{{ faculty.email }}</p>
+            </div>
+
+            <div class="info-box">
+                <label>Role</label>
+                <p>Faculty Member</p>
+            </div>
+
+            <div class="info-box">
+                <label>Joined On</label>
+                <p>{{ faculty.created_at.strftime("%d %b %Y") if faculty.created_at else "-" }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card profile-panel">
+        <div class="profile-panel-head">
+            <h4>Assignment Overview</h4>
+            <span>Current operational context</span>
+        </div>
+
+        <div class="profile-summary-list">
+            <div class="profile-summary-item">
+                <span>Assigned Batch</span>
+                <strong>{{ batch.name if batch else "Not Assigned" }}</strong>
+            </div>
+
+            <div class="profile-summary-item">
+                <span>Review Responsibility</span>
+                <strong>Student submissions and project approvals</strong>
+            </div>
+
+            <div class="profile-summary-item">
+                <span>Account Status</span>
+                <strong>Active</strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+</section>
 
 <script>
 function toggleEdit(){
-    let form = document.getElementById("editForm");
-    form.style.display = form.style.display === "none" ? "block" : "none";
+    const form = document.getElementById("editForm");
+    form.hidden = !form.hidden;
 }
+
+document.addEventListener("DOMContentLoaded", function () {
+    const input = document.getElementById("profilePhotoInput");
+    const preview = document.getElementById("profilePreview");
+    const fallback = document.getElementById("profilePreviewFallback");
+
+    if (!input || !preview) return;
+
+    input.addEventListener("change", function () {
+        const file = this.files && this.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            preview.src = event.target.result;
+            preview.style.display = "block";
+            if (fallback) fallback.style.display = "none";
+        };
+        reader.readAsDataURL(file);
+    });
+});
 </script>
 
 {% endblock %}

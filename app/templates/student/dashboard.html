@@ -4,63 +4,173 @@
 
 <h2 class="page-title">Dashboard</h2>
 
-<div class="dashboard-grid">
+<section class="student-dashboard">
 
-<!-- PROFILE CARD -->
+<div class="student-hero card">
+    <div class="student-hero-copy">
+        <span class="student-hero-tag">Student Workspace</span>
+        <h3>Keep your project moving forward</h3>
+        <p>
+            Track your submission progress, stay connected with your batch,
+            and jump quickly to the pages you use most.
+        </p>
 
-<div class="card">
+        <div class="student-meta-grid">
+            <div class="student-meta-pill">
+                <span class="meta-label">Batch</span>
+                <strong>{{ batch.name }}</strong>
+            </div>
 
-<h4>Student Profile</h4>
+            <div class="student-meta-pill">
+                <span class="meta-label">PRN</span>
+                <strong>{{ student.prn }}</strong>
+            </div>
 
-<p><strong>Name:</strong> {{ student.name }}</p>
+            <div class="student-meta-pill">
+                <span class="meta-label">Academic Year</span>
+                <strong>{{ student.year }}</strong>
+            </div>
 
-<p><strong>PRN:</strong> {{ student.prn }}</p>
+            <div class="student-meta-pill">
+                <span class="meta-label">Mentor</span>
+                <strong>{{ mentor.name if mentor else "Not Assigned Yet" }}</strong>
+            </div>
+        </div>
 
-<p><strong>Year:</strong> {{ student.year }}</p>
+        <div class="student-hero-actions">
+            <a href="{{ url_for('student.submissions') }}" class="btn-primary-custom">
+                <i class="fas fa-upload"></i> View Submissions
+            </a>
+            <a href="{{ url_for('student.student_profile') }}" class="btn-edit">
+                <i class="fas fa-user"></i> Open Profile
+            </a>
+        </div>
+    </div>
 
-<p><strong>Batch:</strong> {{ batch.name }}</p>
+    <div class="student-progress-panel">
+        <div class="student-progress-ring">
+            <div class="circle-progress">
+                <svg width="180" height="180" viewBox="0 0 180 180">
+                    <circle cx="90" cy="90" r="68"
+                    stroke="#dbeafe"
+                    stroke-width="14"
+                    fill="none"/>
 
-{% if mentor %}
-<p><strong>Mentor:</strong> {{ mentor.name }}</p>
-<p><strong>Email:</strong> {{ mentor.email }}</p>
-{% endif %}
+                    <circle cx="90" cy="90" r="68"
+                    stroke="#2563eb"
+                    stroke-width="14"
+                    fill="none"
+                    stroke-dasharray="427"
+                    stroke-dashoffset="{{ 427 - (427 * progress / 100) }}"
+                    stroke-linecap="round"/>
+                </svg>
 
+                <div class="progress-text">
+                    {{ progress }}%
+                </div>
+            </div>
+        </div>
+        <h4>Overall Progress</h4>
+        <p>{{ progress }}% of your approved project work is complete.</p>
+    </div>
 </div>
 
+<div class="student-stats-grid">
+    <div class="student-stat-card card">
+        <div class="student-stat-icon bg-blue">
+            <i class="fas fa-layer-group"></i>
+        </div>
+        <div>
+            <span>Total Stages</span>
+            <strong>{{ "Project Workflow" }}</strong>
+            <p>Follow each stage carefully and upload work on time.</p>
+        </div>
+    </div>
 
-<!-- PROGRESS CARD -->
+    <div class="student-stat-card card">
+        <div class="student-stat-icon bg-teal">
+            <i class="fas fa-user-tie"></i>
+        </div>
+        <div>
+            <span>Mentor Support</span>
+            <strong>{{ mentor.name if mentor else "Pending Assignment" }}</strong>
+            <p>{{ mentor.email if mentor and mentor.email else "Your mentor details will appear here once assigned." }}</p>
+        </div>
+    </div>
 
-<div class="card">
-
-<h4>Project Progress</h4>
-
-<div class="circle-progress">
-
-<svg width="160" height="160">
-
-<circle cx="80" cy="80" r="65"
-stroke="#e5e7eb"
-stroke-width="12"
-fill="none"/>
-
-<circle cx="80" cy="80" r="65"
-stroke="#22c55e"
-stroke-width="12"
-fill="none"
-stroke-dasharray="408"
-stroke-dashoffset="{{ 408 - (408 * progress / 100) }}"
-stroke-linecap="round"/>
-
-</svg>
-
-<div class="progress-text">
-{{ progress }}%
+    <div class="student-stat-card card">
+        <div class="student-stat-icon bg-gold">
+            <i class="fas fa-id-card"></i>
+        </div>
+        <div>
+            <span>Student Name</span>
+            <strong>{{ student.name }}</strong>
+            <p>Use your PRN and batch details correctly in all submissions.</p>
+        </div>
+    </div>
 </div>
 
+<div class="student-lower-grid">
+    <div class="card student-card-list">
+        <div class="student-section-head">
+            <h4>What To Do Next</h4>
+            <span>Recommended actions</span>
+        </div>
+
+        <div class="student-task-list">
+            <div class="student-task-item">
+                <div class="task-bullet"><i class="fas fa-cloud-upload-alt"></i></div>
+                <div>
+                    <strong>Check your submissions page</strong>
+                    <p>Upload missing files, reupload corrections, and monitor review status.</p>
+                </div>
+            </div>
+
+            <div class="student-task-item">
+                <div class="task-bullet"><i class="fas fa-calendar-check"></i></div>
+                <div>
+                    <strong>Stay ahead of deadlines</strong>
+                    <p>Try to submit before the final day so your mentor has time to review.</p>
+                </div>
+            </div>
+
+            <div class="student-task-item">
+                <div class="task-bullet"><i class="fas fa-comments"></i></div>
+                <div>
+                    <strong>Follow mentor feedback</strong>
+                    <p>Use remarks on your submissions to improve the next stage quickly.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card student-card-list">
+        <div class="student-section-head">
+            <h4>Quick Summary</h4>
+            <span>At a glance</span>
+        </div>
+
+        <div class="student-summary-list">
+            <div class="student-summary-row">
+                <span>Current Batch</span>
+                <strong>{{ batch.name }}</strong>
+            </div>
+            <div class="student-summary-row">
+                <span>Registered Email</span>
+                <strong>{{ student.email or "Not Added" }}</strong>
+            </div>
+            <div class="student-summary-row">
+                <span>Mentor</span>
+                <strong>{{ mentor.name if mentor else "Not Assigned" }}</strong>
+            </div>
+            <div class="student-summary-row">
+                <span>Current Progress</span>
+                <strong>{{ progress }}%</strong>
+            </div>
+        </div>
+    </div>
 </div>
 
-</div>
-
-</div>
+</section>
 
 {% endblock %}

@@ -8,8 +8,7 @@
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
-<!-- <link rel="stylesheet" href="{{ url_for('static', filename='css/style1.css') }}"> -->
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style1.css') }}">
 
 <link rel="stylesheet"
 href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -26,7 +25,10 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 
 <div class="sidebar">
 
-<h4 class="logo">ZIBACAR</h4>
+<a class="logo" href="{% if current_user.role == 'admin' %}{{ url_for('admin.dashboard') }}{% elif current_user.role == 'faculty' %}{{ url_for('admin.faculty_dashboard') }}{% else %}{{ url_for('student.dashboard') }}{% endif %}">
+<img src="{{ url_for('static', filename='images/ZIBACAR.png') }}" alt="ZIBACAR" class="logo-mark">
+<span class="logo-text">ZIBACAR</span>
+</a>
 
 <ul class="nav flex-column mt-3">
 
@@ -58,7 +60,7 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 
 <li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='admin.manage_stages' %}active-link{% endif %}" href="{{ url_for('admin.manage_stages') }}">
-<i class="fa fa-tasks sidebar-icon"></i> Stages
+<i class="fa fa-tasks sidebar-icon"></i> Progress Report
 </a>
 </li>
 
@@ -149,34 +151,52 @@ Sign Out
 
 <div class="notification-wrapper">
 
-<div class="notification-bell" onclick="toggleNotifications()">
+<button type="button" class="notification-bell" onclick="toggleNotifications()" aria-label="Open notifications">
 <i class="fa fa-bell"></i>
 
-{% if unread_count > 0 %} <span class="notification-count">
+{% if unread_count > 0 %} <span id="notificationCount" class="notification-count">
 {{ unread_count }} </span>
 {% endif %}
 
-</div>
+</button>
 
 <div id="notificationDropdown" class="notification-dropdown">
 
 <div class="notification-header">
-Notifications
+<div>
+<strong>Notifications</strong>
+<span>Latest updates for your account</span>
+</div>
+<span id="notificationHeaderBadge" class="notification-header-badge">{{ unread_count }}</span>
 </div>
 
 {% if notifications %}
 
+<div class="notification-list">
+
 {% for n in notifications %}
 
-<div class="notification-item">
-{{ n.message }}
+<div class="notification-item {% if not n.read %}unread{% endif %}">
+<div class="notification-item-icon">
+<i class="fa-solid fa-bell"></i>
+</div>
+<div class="notification-item-copy">
+<p>{{ n.message }}</p>
+<span>{{ format_notification_time(n.created_at) }}</span>
+</div>
 </div>
 {% endfor %}
+
+</div>
 
 {% else %}
 
 <div class="notification-empty">
-No notifications
+<div class="notification-empty-icon">
+<i class="fa-regular fa-bell-slash"></i>
+</div>
+<strong>No notifications yet</strong>
+<span>New activity will appear here.</span>
 </div>
 
 {% endif %}
@@ -219,12 +239,13 @@ No notifications
 
 function toggleNotifications(){
 
-let dropdown = document.getElementById("notificationDropdown");
+const dropdown = document.getElementById("notificationDropdown");
+const isOpen = dropdown.classList.contains("is-open");
 
-if(dropdown.style.display === "block"){
-dropdown.style.display = "none";
+if(isOpen){
+dropdown.classList.remove("is-open");
 }else{
-dropdown.style.display = "block";
+dropdown.classList.add("is-open");
 markNotificationsRead();
 }
 
@@ -232,11 +253,44 @@ markNotificationsRead();
 
 function markNotificationsRead(){
 
-fetch("/notifications/read",{
+const count = document.getElementById("notificationCount");
+const headerBadge = document.getElementById("notificationHeaderBadge");
+const unreadItems = document.querySelectorAll(".notification-item.unread");
+
+fetch("{{ url_for('admin.mark_notifications') }}",{
 method:"POST"
+}).then(function(response){
+if(!response.ok){
+return;
+}
+
+if(count){
+count.remove();
+}
+
+if(headerBadge){
+headerBadge.textContent = "0";
+}
+
+unreadItems.forEach(function(item){
+item.classList.remove("unread");
+});
 });
 
 }
+
+document.addEventListener("click", function(event){
+const wrapper = document.querySelector(".notification-wrapper");
+const dropdown = document.getElementById("notificationDropdown");
+
+if(!wrapper || !dropdown){
+return;
+}
+
+if(!wrapper.contains(event.target)){
+dropdown.classList.remove("is-open");
+}
+});
 
 </script>
 

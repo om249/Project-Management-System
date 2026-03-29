@@ -3,11 +3,34 @@
 {% block content %}
 
 <h2 class="page-title">Assign Students to {{ batch.name }}</h2>
+<p class="section-subtitle">Academic session: <strong>{{ batch.year or "Not Set" }}</strong></p>
 
 <form method="POST"
       action="{{ url_for('admin.save_assigned_students', batch_id=batch._id) }}">
 
 <div class="card">
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="flash-container">
+    {% for category, message in messages %}
+    <div class="flash-message {{ category }}">
+        {{ message }}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
+<div class="assign-header">
+    <div>
+        <h4>Eligible Students</h4>
+        <p class="section-subtitle">Choose students from the same academic session and save the batch roster.</p>
+    </div>
+    <div class="assign-summary">
+        <span>Total Visible</span>
+        <strong>{{ students|length }}</strong>
+    </div>
+</div>
 
 <table class="custom-table">
 
@@ -29,7 +52,8 @@
 <td>
 <input type="checkbox"
        name="students"
-       value="{{ s._id }}">
+       value="{{ s._id }}"
+       {% if s._id|string in selected_student_ids %}checked{% endif %}>
 </td>
 
 <td>{{ s.prn }}</td>
@@ -47,6 +71,11 @@
 <button class="btn-primary-custom">
 Assign Selected Students
 </button>
+
+<a href="{{ url_for('admin.manage_batches', session=batch.session_id) }}"
+   class="btn-edit assign-back-btn">
+   Back To Batches
+</a>
 
 </div>
 
