@@ -5,6 +5,13 @@
 
 <div class="card">
 
+{% if batch_notice %}
+<div class="empty-state-panel">
+<h4>Batch Not Allocated Yet</h4>
+<p>{{ batch_notice }}</p>
+</div>
+{% else %}
+
 <table class="custom-table">
 
 <thead>
@@ -99,6 +106,8 @@ Reject
 </tbody>
 
 </table>
+
+{% endif %}
 
 </div>
 

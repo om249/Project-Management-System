@@ -2,6 +2,7 @@ import email
 from unittest import result
 import re
 import os
+from functools import wraps
 
 from numpy import rint
 import pandas as pd
@@ -79,6 +80,131 @@ def get_session_deadline_query(session_id, stage_id=None):
     if stage_id is not None:
         query["stage_id"] = stage_id
     return query
+
+
+def ensure_admin_access_state():
+    admins = list(current_app.db.users.find({"role": "admin"}).sort("created_at", 1))
+    if not admins:
+        return []
+
+    if not any(admin.get("can_manage_admins") for admin in admins):
+        current_app.db.users.update_one(
+            {"_id": admins[0]["_id"]},
+            {"$set": {"can_manage_admins": True}}
+        )
+        admins[0]["can_manage_admins"] = True
+
+    current_admin = next((admin for admin in admins if admin.get("can_manage_admins")), admins[0])
+    extra_admin_ids = [admin["_id"] for admin in admins if admin["_id"] != current_admin["_id"]]
+
+    if extra_admin_ids:
+        current_app.db.users.update_many(
+            {"_id": {"$in": extra_admin_ids}},
+            {
+                "$set": {
+                    "role": "faculty",
+                    "can_manage_admins": False,
+                    "is_project_coordinator": False
+                }
+            }
+        )
+
+    current_app.db.users.update_many(
+        {"_id": {"$ne": current_admin["_id"]}},
+        {"$set": {"is_project_coordinator": False}}
+    )
+
+    current_app.db.users.update_one(
+        {"_id": current_admin["_id"]},
+        {
+            "$set": {
+                "role": "admin",
+                "can_manage_admins": True,
+                "is_project_coordinator": True
+            }
+        }
+    )
+
+    return list(current_app.db.users.find({"role": "admin"}).sort("created_at", 1))
+
+
+def get_privileged_admin():
+    ensure_admin_access_state()
+    return current_app.db.users.find_one(
+        {"role": "admin", "can_manage_admins": True},
+        sort=[("created_at", 1)]
+    )
+
+
+def current_user_can_manage_admins():
+    privileged_admin = get_privileged_admin()
+    return bool(privileged_admin and str(privileged_admin["_id"]) == str(current_user.id))
+
+
+def mentor_access_required(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        if current_user.role not in ["admin", "faculty"]:
+            flash("Only mentor accounts can access that page.", "warning")
+            return redirect(url_for("auth.login"))
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def replace_current_admin(target_user, make_coordinator=False):
+    previous_admin = get_privileged_admin()
+    now = datetime.utcnow()
+
+    current_app.db.users.update_many(
+        {"role": "admin"},
+        {
+            "$set": {
+                "role": "faculty",
+                "can_manage_admins": False,
+                "is_project_coordinator": False
+            }
+        }
+    )
+
+    update_data = {
+        "role": "admin",
+        "can_manage_admins": True,
+        "granted_by": ObjectId(current_user.id),
+        "granted_at": now
+    }
+
+    current_app.db.users.update_many({}, {"$set": {"is_project_coordinator": False}})
+    update_data["is_project_coordinator"] = True
+
+    current_app.db.users.update_one(
+        {"_id": target_user["_id"]},
+        {"$set": update_data}
+    )
+
+    if previous_admin and str(previous_admin["_id"]) != str(target_user["_id"]):
+        current_app.db.users.update_one(
+            {"_id": previous_admin["_id"]},
+            {
+                "$set": {
+                    "role": "faculty",
+                    "can_manage_admins": False,
+                    "is_project_coordinator": False
+                }
+            }
+        )
+
+
+def redirect_after_admin_access_change():
+    acting_user = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
+
+    if acting_user and acting_user.get("role") == "admin":
+        return redirect(url_for("admin.manage_admin_access"))
+
+    if acting_user and acting_user.get("is_project_coordinator"):
+        return redirect(url_for("admin.manage_batches"))
+
+    return redirect(url_for("admin.faculty_dashboard"))
 
 
 def ensure_academic_sessions():
@@ -198,6 +324,7 @@ def get_faculty_assigned_batch(faculty_id, selected_session_id=None):
 @login_required
 @role_required("admin")
 def dashboard():
+    ensure_admin_access_state()
     total_batches = current_app.db.batches.count_documents({})
     total_stages = current_app.db.stages.count_documents({})
     total_students = current_app.db.students.count_documents({})
@@ -243,6 +370,7 @@ def dashboard():
 @login_required
 @role_required("admin")
 def admin_profile():
+    ensure_admin_access_state()
 
     admin = current_app.db.users.find_one({
         "_id": ObjectId(current_user.id)
@@ -417,7 +545,7 @@ def manage_batches():
 
     # Fetch only faculty NOT assigned
     faculty = list(current_app.db.users.find({
-    "role": "faculty",
+    "role": {"$in": ["faculty", "admin"]},
     "_id": {"$nin": assigned_mentors}
     })) 
 
@@ -425,7 +553,7 @@ def manage_batches():
     assigned_mentors = [m for m in assigned_mentors if m]
 
     faculty = list(current_app.db.users.find({
-        "role": "faculty",
+        "role": {"$in": ["faculty", "admin"]},
         "$or": [
         {"_id": {"$nin": assigned_mentors}},
         {"_id": {"$in": assigned_mentors}}
@@ -664,6 +792,7 @@ def delete_stage(stage_id):
 @login_required
 @role_required("admin")
 def manage_faculty():
+    ensure_admin_access_state()
     faculty_list = list(current_app.db.users.find({"role": "faculty"}))
     form_data = {"name": "", "email": ""}
 
@@ -721,6 +850,159 @@ def manage_faculty():
     return render_template("admin/faculty.html", faculty=faculty_list, form_data=form_data)
 
 
+@admin_bp.route("/admin-access")
+@login_required
+@role_required("admin")
+def manage_admin_access():
+    ensure_admin_access_state()
+
+    if not current_user_can_manage_admins():
+        flash("Only the current admin can manage admin access.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    admins = list(current_app.db.users.find({"role": "admin"}).sort("created_at", 1))
+    faculty_candidates = list(current_app.db.users.find({"role": "faculty"}).sort("created_at", 1))
+    current_admin = next((admin for admin in admins if admin.get("can_manage_admins")), None)
+
+    return render_template(
+        "admin/admin_access.html",
+        admins=admins,
+        faculty_candidates=faculty_candidates,
+        current_admin=current_admin
+    )
+
+
+@admin_bp.route("/admin-access/promote/<user_id>", methods=["POST"])
+@login_required
+@role_required("admin")
+def promote_user_to_admin(user_id):
+    ensure_admin_access_state()
+
+    if not current_user_can_manage_admins():
+        flash("Only the current admin can promote users to admin.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    user = current_app.db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        flash("Selected user was not found.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    replace_current_admin(user, make_coordinator=True)
+
+    flash("Admin and project coordinator changed successfully. The previous admin is now faculty.", "success")
+    return redirect_after_admin_access_change()
+
+
+@admin_bp.route("/admin-access/transfer-privilege/<user_id>", methods=["POST"])
+@login_required
+@role_required("admin")
+def transfer_admin_privilege(user_id):
+    ensure_admin_access_state()
+
+    if not current_user_can_manage_admins():
+        flash("Only the current admin can transfer admin access.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        flash("Selected user was not found.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        flash("Selected user was not found.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    if target.get("role") not in ["faculty", "admin"]:
+        flash("Only faculty or admin users can receive admin access.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    replace_current_admin(target, make_coordinator=True)
+    flash("Admin and project coordinator updated successfully.", "success")
+    return redirect_after_admin_access_change()
+
+
+@admin_bp.route("/admin-access/assign-coordinator/<user_id>", methods=["POST"])
+@login_required
+@role_required("admin")
+def assign_project_coordinator(user_id):
+    ensure_admin_access_state()
+
+    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        flash("Selected user was not found.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    if target.get("role") not in ["faculty", "admin"]:
+        flash("Only faculty or admin users can receive admin access.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    replace_current_admin(target, make_coordinator=True)
+    flash("Admin and project coordinator updated successfully.", "success")
+    return redirect_after_admin_access_change()
+
+
+@admin_bp.route("/admin-access/assign-admin-coordinator/<user_id>", methods=["POST"])
+@login_required
+@role_required("admin")
+def assign_admin_and_project_coordinator(user_id):
+    ensure_admin_access_state()
+
+    if not current_user_can_manage_admins():
+        flash("Only the current admin can assign combined admin and coordinator access.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        flash("Selected user was not found.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    if target.get("role") not in ["faculty", "admin"]:
+        flash("Only faculty or admin users can receive combined admin access.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    replace_current_admin(target, make_coordinator=True)
+
+    flash("Current admin and project coordinator updated successfully.", "success")
+    return redirect_after_admin_access_change()
+
+
+@admin_bp.route("/admin-access/demote/<user_id>", methods=["POST"])
+@login_required
+@role_required("admin")
+def demote_admin_user(user_id):
+    ensure_admin_access_state()
+
+    if not current_user_can_manage_admins():
+        flash("Only the current admin can demote admins.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
+    if not target or target.get("role") != "admin":
+        flash("Selected admin was not found.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    if str(target["_id"]) == str(current_user.id):
+        flash("Transfer current admin access before trying to change your own admin role.", "warning")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    if target.get("can_manage_admins"):
+        flash("Current admin access must be transferred before demotion.", "warning")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    if target.get("is_project_coordinator"):
+        flash("Transfer project coordinator responsibility before demotion.", "warning")
+        return redirect(url_for("admin.manage_admin_access"))
+
+    current_app.db.users.update_one(
+        {"_id": target["_id"]},
+        {"$set": {"role": "faculty", "can_manage_admins": False, "is_project_coordinator": False}}
+    )
+
+    flash("Admin user demoted to faculty successfully.", "success")
+    return redirect(url_for("admin.manage_admin_access"))
+
+
 @admin_bp.route("/faculty/profile", methods=["GET", "POST"])
 @login_required
 @role_required("faculty")
@@ -765,7 +1047,7 @@ def delete_faculty(faculty_id):
 # ===================== FACULTY DASHBOARD =====================
 @admin_bp.route("/faculty/dashboard")
 @login_required
-@role_required("faculty")
+@mentor_access_required
 def faculty_dashboard():
 
     mentor_id = ObjectId(current_user.id)
@@ -1394,7 +1676,7 @@ def save_assigned_students(batch_id):
 # ---------------- FACULTY STUDENTS ----------------
 @admin_bp.route("/faculty/students")
 @login_required
-@role_required("faculty")
+@mentor_access_required
 def faculty_students():
 
     faculty_id = current_user.id
@@ -1474,15 +1756,21 @@ def update_faculty_profile():
 # ---------------- MENTOR SUBMISSIONS ----------------
 @admin_bp.route("/mentor-submissions")
 @login_required
-@role_required("faculty")
+@mentor_access_required
 def mentor_submissions():
 
     mentor_id = ObjectId(current_user.id)
     batch, _, _ = get_faculty_assigned_batch(mentor_id, request.args.get("session"))
 
     if not batch:
-        flash("No batch assigned")
-        return redirect(url_for("admin.faculty_dashboard"))
+        return render_template(
+            "faculty/submissions.html",
+            submissions=[],
+            student_map={},
+            stage_map={},
+            batch=None,
+            batch_notice="No batch is allocated to you till now."
+        )
 
     students = list(current_app.db.students.find({
         "batch_id": batch["_id"]
@@ -1503,12 +1791,14 @@ def mentor_submissions():
         "faculty/submissions.html",
         submissions=submissions,
         student_map=student_map,
-        stage_map=stage_map
+        stage_map=stage_map,
+        batch=batch,
+        batch_notice=None
     )
 
 @admin_bp.route("/approve-submission/<submission_id>", methods=["POST"])
 @login_required
-@role_required("faculty")
+@mentor_access_required
 def approve_submission(submission_id):
 
     remark = request.form.get("remark")
@@ -1552,7 +1842,7 @@ def approve_submission(submission_id):
 
 @admin_bp.route("/reject-submission/<submission_id>", methods=["POST"])
 @login_required
-@role_required("faculty")
+@mentor_access_required
 def reject_submission(submission_id):
 
     remark = request.form.get("remark")

@@ -122,8 +122,16 @@
                         <div class="profile-form-grid">
                             <div class="profile-field-card">
                                 <label>New Password</label>
-                                <input type="password" name="new_password" placeholder="Enter new password">
-                                <p class="profile-field-help">Minimum 8 characters, with 1 capital letter, 1 small letter, 1 digit, and 1 symbol.</p>
+                                <input type="password" name="new_password" class="password-rules-input" placeholder="Enter new password">
+                                <div class="password-rules-box">
+                                    <ul class="password-rules-list">
+                                        <li class="password-rule-item" data-rule="length"><i class="fas fa-circle"></i> Minimum 8 characters</li>
+                                        <li class="password-rule-item" data-rule="upper"><i class="fas fa-circle"></i> Minimum 1 capital letter</li>
+                                        <li class="password-rule-item" data-rule="lower"><i class="fas fa-circle"></i> Minimum 1 small letter</li>
+                                        <li class="password-rule-item" data-rule="digit"><i class="fas fa-circle"></i> Minimum 1 digit</li>
+                                        <li class="password-rule-item" data-rule="symbol"><i class="fas fa-circle"></i> Minimum 1 symbol</li>
+                                    </ul>
+                                </div>
                             </div>
 
                             <div class="profile-field-card">
@@ -261,6 +269,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const input = document.getElementById("profilePhotoInput");
     const preview = document.getElementById("profilePreview");
     const fallback = document.getElementById("profilePreviewFallback");
+    const passwordInput = document.querySelector(".password-rules-input");
 
     if (!input || !preview) return;
 
@@ -276,6 +285,28 @@ document.addEventListener("DOMContentLoaded", function () {
         };
         reader.readAsDataURL(file);
     });
+
+    if (passwordInput) {
+        const ruleMap = {
+            length: (value) => value.length >= 8,
+            upper: (value) => /[A-Z]/.test(value),
+            lower: (value) => /[a-z]/.test(value),
+            digit: (value) => /\d/.test(value),
+            symbol: (value) => /[^A-Za-z0-9]/.test(value)
+        };
+
+        const ruleItems = document.querySelectorAll(".password-rule-item");
+        const updateRules = function () {
+            const value = passwordInput.value || "";
+            ruleItems.forEach(function (item) {
+                const rule = item.dataset.rule;
+                item.classList.toggle("is-valid", ruleMap[rule](value));
+            });
+        };
+
+        passwordInput.addEventListener("input", updateRules);
+        updateRules();
+    }
 });
 </script>
 

@@ -622,25 +622,42 @@ def upload_stage(stage_id):
 
     # -------- LATE SUBMISSION --------
     if late:
-
         admin = current_app.db.users.find_one({"role": "admin"})
+        late_message = f"{student_name} submitted {stage_name} late"
+        notified_user_ids = set()
+        emailed_addresses = set()
 
-        if admin:
-            create_notification(
-                admin["_id"],
-                f"{student_name} submitted {stage_name} late"
-            )
+        if faculty_id:
+            create_notification(faculty_id, late_message)
+            notified_user_ids.add(str(faculty_id))
 
-            # EMAIL admin
-            if admin.get("email"):
+            faculty = current_app.db.users.find_one({"_id": faculty_id})
+            faculty_email = (faculty or {}).get("email")
+            if faculty_email and faculty_email not in emailed_addresses:
                 try:
                     send_email(
-                        admin["email"],
+                        faculty_email,
                         "Late Submission Alert",
                         late_submission_email(student_name, stage_name)
                     )
+                    emailed_addresses.add(faculty_email)
                 except Exception as e:
                     print("Email error:", e)
+
+        if admin and str(admin["_id"]) not in notified_user_ids:
+            create_notification(admin["_id"], late_message)
+            notified_user_ids.add(str(admin["_id"]))
+
+        if admin and admin.get("email") and admin["email"] not in emailed_addresses:
+            try:
+                send_email(
+                    admin["email"],
+                    "Late Submission Alert",
+                    late_submission_email(student_name, stage_name)
+                )
+                emailed_addresses.add(admin["email"])
+            except Exception as e:
+                print("Email error:", e)
 
     flash("File uploaded successfully")
     return redirect(url_for("student.dashboard"))

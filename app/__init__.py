@@ -1,10 +1,11 @@
-from flask import Flask
+from flask import Flask, current_app, redirect, url_for, flash
 from flask_login import LoginManager, current_user
 from flask_bcrypt import Bcrypt
 from flask_mail import Mail
 from flask_pymongo import PyMongo
 from datetime import timezone
 from zoneinfo import ZoneInfo
+from bson.objectid import ObjectId
 from config import Config
 from app.models.user_model import User
 from app.services.notification_service import get_notifications, create_notification, mark_notifications_read
@@ -54,20 +55,43 @@ def create_app():
             return dt.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y, %I:%M %p")
 
         if current_user.is_authenticated:
+            current_user_record = None
+            if current_user.role in ["admin", "faculty"]:
+                current_user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
+            elif current_user.role == "student":
+                current_user_record = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
 
             notifications, unread_count = get_notifications(current_user.id)
 
             return dict(
                 notifications=notifications,
                 unread_count=unread_count,
-                format_notification_time=format_notification_time
+                format_notification_time=format_notification_time,
+                current_user_record=current_user_record
             )
 
         return dict(
             notifications=[],
             unread_count=0,
-            format_notification_time=format_notification_time
+            format_notification_time=format_notification_time,
+            current_user_record=None
         )
+
+    @app.errorhandler(403)
+    def handle_forbidden(_error):
+        if current_user.is_authenticated:
+            flash("Your access was updated. You have been moved to the correct dashboard.", "info")
+
+            if current_user.role == "admin":
+                return redirect(url_for("admin.dashboard"))
+
+            if current_user.role == "faculty":
+                return redirect(url_for("admin.faculty_dashboard"))
+
+            if current_user.role == "student":
+                return redirect(url_for("student.dashboard"))
+
+        return redirect(url_for("auth.login"))
 
     return app
 

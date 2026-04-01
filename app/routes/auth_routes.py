@@ -9,24 +9,29 @@ auth_bp = Blueprint("auth", __name__)
 
 @auth_bp.route("/", methods=["GET", "POST"])
 def login():
+    selected_role = "admin"
 
     if request.method == "POST":
+        selected_role = request.form.get("login_role", "admin")
+        identifier_label = "PRN" if selected_role == "student" else "email"
 
         username = request.form["email"].strip()
         password = request.form["password"]
 
         if not username or not password:
-            flash("Enter both your PRN/email and password.", "warning")
-            return render_template("auth/login.html")
+            flash(f"Enter both your {identifier_label} and password.", "warning")
+            return render_template("auth/login.html", selected_role=selected_role)
 
-        user_data = current_app.db.users.find_one({"email": username})
+        user_data = None
 
-        if not user_data:
+        if selected_role == "student":
             user_data = current_app.db.students.find_one({"prn": username})
+        else:
+            user_data = current_app.db.users.find_one({"email": username, "role": selected_role})
 
         if not user_data:
-            flash("No account found with that PRN or email.", "warning")
-            return render_template("auth/login.html")
+            flash(f"No account found with that {identifier_label}.", "warning")
+            return render_template("auth/login.html", selected_role=selected_role)
 
         if bcrypt.check_password_hash(user_data["password"], password):
 
@@ -56,7 +61,7 @@ def login():
 
         flash("Incorrect password. Please try again.", "danger")
 
-    return render_template("auth/login.html")
+    return render_template("auth/login.html", selected_role=selected_role)
 
 
 @auth_bp.route("/change-password", methods=["GET", "POST"])

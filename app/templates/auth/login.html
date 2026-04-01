@@ -9,9 +9,9 @@
         <div class="login-brand-row">
             <img src="{{ url_for('static', filename='images/ZIBACAR.png') }}" class="login-logo" alt="ZIBACAR">
             <div class="login-brand-copy">
-                <span class="login-kicker">Academic Workflow Platform</span>
+                <span class="login-kicker">Project Management System</span>
                 <h4 class="login-title">Welcome Back</h4>
-                <p class="login-subtitle">Sign in to manage students, submissions, batches, and mentoring updates in one place.</p>
+                <p class="login-subtitle">Sign in to manage project stages, submissions, batches, deadlines, and coordination in one place.</p>
             </div>
         </div>
 
@@ -28,10 +28,51 @@
         {% endwith %}
 
         <form method="POST">
+            <input type="hidden" name="login_role" id="loginRoleInput" value="{{ selected_role or 'admin' }}">
+
+            <div class="login-role-grid">
+                <button type="button"
+                        class="login-role-card {% if (selected_role or 'admin') == 'admin' %}active{% endif %}"
+                        data-role="admin"
+                        data-label="Coordinator Email"
+                        data-placeholder="Enter project coordinator email"
+                        data-helper="Project coordinator signs in with official email."
+                        onclick="setLoginRole(this)">
+                    <span class="login-role-icon"><i class="fas fa-user-shield"></i></span>
+                    <strong>Project Coordinator</strong>
+                    <!-- <span>Administrative control and project operations</span> -->
+                </button>
+
+                <button type="button"
+                        class="login-role-card {% if (selected_role or 'admin') == 'faculty' %}active{% endif %}"
+                        data-role="faculty"
+                        data-label="Mentor Email"
+                        data-placeholder="Enter mentor or faculty email"
+                        data-helper="Faculty signs in with assigned login email."
+                        onclick="setLoginRole(this)">
+                    <span class="login-role-icon"><i class="fas fa-chalkboard-teacher"></i></span>
+                    <strong>Mentor</strong>
+                    <!-- <span>Review submissions, guide batches, and track progress</span> -->
+                </button>
+
+                <button type="button"
+                        class="login-role-card {% if (selected_role or 'admin') == 'student' %}active{% endif %}"
+                        data-role="student"
+                        data-label="Student PRN"
+                        data-placeholder="Enter your PRN"
+                        data-helper="Students sign in using PRN and password."
+                        onclick="setLoginRole(this)">
+                    <span class="login-role-icon"><i class="fas fa-user-graduate"></i></span>
+                    <strong>Mentee</strong>
+                    <!-- <span>Track deadlines, uploads, and mentor feedback</span> -->
+                </button>
+            </div>
+
+            <div class="login-role-helper" id="loginRoleHelper"></div>
 
             <div class="mb-3">
-                <label>PRN / Email</label>
-                <input type="text" name="email" class="form-control" placeholder="Enter your PRN or official email" required>
+                <label id="loginIdentifierLabel">Coordinator Email</label>
+                <input type="text" name="email" id="loginIdentifierInput" class="form-control" placeholder="Enter project coordinator email" required>
             </div>
 
             <div class="mb-3">
@@ -50,5 +91,31 @@
     </div>
 
 </div>
+
+<script>
+function setLoginRole(button) {
+    const role = button.dataset.role;
+    const label = button.dataset.label;
+    const placeholder = button.dataset.placeholder;
+    const helper = button.dataset.helper;
+
+    document.getElementById("loginRoleInput").value = role;
+    document.getElementById("loginIdentifierLabel").textContent = label;
+    document.getElementById("loginIdentifierInput").placeholder = placeholder;
+    document.getElementById("loginRoleHelper").textContent = helper;
+
+    document.querySelectorAll(".login-role-card").forEach(function(card) {
+        card.classList.remove("active");
+    });
+    button.classList.add("active");
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    const activeButton = document.querySelector(".login-role-card.active") || document.querySelector(".login-role-card");
+    if (activeButton) {
+        setLoginRole(activeButton);
+    }
+});
+</script>
 
 {% endblock %}

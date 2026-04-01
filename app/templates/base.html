@@ -70,6 +70,26 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 </a>
 </li>
 
+<li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='admin.mentor_submissions' %}active-link{% endif %}" href="{{ url_for('admin.mentor_submissions') }}">
+<i class="fa fa-file-alt sidebar-icon"></i> Submissions
+</a>
+</li>
+
+<li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='admin.faculty_students' %}active-link{% endif %}" href="{{ url_for('admin.faculty_students') }}">
+<i class="fa fa-users sidebar-icon"></i> My Batch Students
+</a>
+</li>
+
+{% if current_user_record and current_user_record.can_manage_admins %}
+<li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='admin.manage_admin_access' %}active-link{% endif %}" href="{{ url_for('admin.manage_admin_access') }}">
+<i class="fa fa-user-lock sidebar-icon"></i> Admin Access
+</a>
+</li>
+{% endif %}
+
 {% endif %}
 
 {% if current_user.role == "faculty" %}
@@ -99,8 +119,6 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 <i class="fa fa-users"></i> Students
 </a>
 </li>
-
-
 
 {% endif %}
 
