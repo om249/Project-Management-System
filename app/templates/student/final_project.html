@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="page-title">Final Project Submission</h2>
+
+<div class="card modern-card">
+    <div class="dashboard-section-head">
+        <div>
+            <h3 class="section-title">Project Delivery</h3>
+            <span>Upload your project ZIP file and optionally share GitHub or live demo links for final review.</span>
+        </div>
+    </div>
+
+    <div class="final-project-shell">
+        <form method="POST"
+        action="{{ url_for('student.final_project_submission') }}"
+        enctype="multipart/form-data"
+        class="final-project-form">
+
+            <div class="form-grid two-col">
+                <div class="form-card">
+                    <label>Project Title</label>
+                    <input type="text" name="title" value="{{ final_project.project_title if final_project else '' }}" placeholder="Enter final project title" required>
+                </div>
+
+                <div class="form-card">
+                    <label>Project Archive (.zip)</label>
+                    <label class="file-upload submission-file-upload">
+                        <input type="file"
+                        name="project_archive"
+                        class="submission-file-input"
+                        data-label-id="finalProjectFileLabel"
+                        accept=".zip"
+                        required>
+                        <span id="finalProjectFileLabel" class="submission-file-trigger">{{ final_project.archive_file if final_project and final_project.archive_file else 'Choose ZIP File' }}</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-grid two-col">
+                <div class="form-card">
+                    <label>GitHub Link (Optional)</label>
+                    <input type="url" name="github_link" value="{{ final_project.github_link if final_project else '' }}" placeholder="https://github.com/your-repo">
+                </div>
+
+                <div class="form-card">
+                    <label>Live / Demo Link (Optional)</label>
+                    <input type="url" name="live_link" value="{{ final_project.live_link if final_project else '' }}" placeholder="https://your-demo-link.com">
+                </div>
+            </div>
+
+            <div class="form-card">
+                <label>Project Description</label>
+                <textarea name="description" rows="4" placeholder="Share a short abstract or project summary">{{ final_project.description if final_project else '' }}</textarea>
+            </div>
+
+            <div class="dashboard-action-row">
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-folder-open"></i>
+                    {% if final_project %}Reupload Final Project{% else %}Submit Final Project{% endif %}
+                </button>
+
+                {% if final_project and final_project.archive_file %}
+                <a class="btn-view" href="{{ url_for('admin.download_file', filename=final_project.archive_file) }}">
+                    <i class="fas fa-download"></i> Download Current ZIP
+                </a>
+                {% endif %}
+
+                {% if final_project and final_project.github_link %}
+                <a class="btn-edit" href="{{ final_project.github_link }}" target="_blank" rel="noopener noreferrer">
+                    <i class="fab fa-github"></i> Open GitHub
+                </a>
+                {% endif %}
+
+                {% if final_project and final_project.live_link %}
+                <a class="btn-edit" href="{{ final_project.live_link }}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-arrow-up-right-from-square"></i> Open Live Link
+                </a>
+                {% endif %}
+            </div>
+        </form>
+
+        <div class="final-project-status-card">
+            <span class="dashboard-kicker">Current Status</span>
+
+            {% if final_project %}
+                {% if final_project.status == "approved" %}
+                <span class="badge approved">Approved</span>
+                {% elif final_project.status == "rejected" %}
+                <span class="badge rejected">Rejected</span>
+                {% else %}
+                <span class="badge pending">Pending</span>
+                {% endif %}
+
+                <p><strong>Submitted On:</strong> {{ final_project.submitted_at.strftime("%d %b %Y %I:%M %p") if final_project.submitted_at else "Not available" }}</p>
+                <p><strong>Remark:</strong> {{ final_project.remark if final_project.remark else "No remark yet." }}</p>
+            {% else %}
+                <span class="badge neutral">Not Submitted</span>
+                <p>Submit your final project ZIP when your work is ready for final review.</p>
+            {% endif %}
+
+            <p><strong>Batch:</strong> {{ batch.name if batch else "Not Assigned Yet" }}</p>
+            <p><strong>Mentor:</strong> {{ mentor.name if mentor else "Not Assigned Yet" }}</p>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+const input = document.querySelector('[data-label-id="finalProjectFileLabel"]');
+if(!input){
+return;
+}
+
+input.addEventListener("change", function(){
+const label = document.getElementById(this.dataset.labelId);
+if(!label){
+return;
+}
+
+if(this.files && this.files.length > 0){
+label.textContent = this.files[0].name;
+}else{
+label.textContent = "Choose ZIP File";
+}
+});
+});
+</script>
+
+{% endblock %}

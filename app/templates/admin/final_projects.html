@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">Project Submissions</h2>
+
+<div class="card admin-access-hero">
+    <div>
+        <span class="dashboard-kicker">Final Project Oversight</span>
+        <h3>Track every final project in one place</h3>
+        <p class="section-subtitle">Download project ZIP files, open GitHub or live demo links, and monitor review status across all batches.</p>
+    </div>
+
+    <form method="GET" class="session-toolbar">
+        <select name="session" onchange="this.form.submit()">
+            {% for session in sessions %}
+            <option value="{{ session._id }}" {% if selected_session and selected_session._id == session._id %}selected{% endif %}>{{ session.name }}</option>
+            {% endfor %}
+        </select>
+    </form>
+</div>
+
+<div class="card">
+<table class="custom-table">
+<thead>
+<tr>
+<th>Student</th>
+<th>Project</th>
+<th>Batch</th>
+<th>Mentor</th>
+<th>Archive</th>
+<th>Links</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+{% for item in final_projects %}
+{% set student = student_map.get(item.student_id|string) %}
+{% set mentor = mentor_map.get(item.mentor_id|string) %}
+{% set batch = batch_map.get(item.batch_id|string) %}
+<tr>
+<td>
+<strong>{{ student.name if student else "Unknown Student" }}</strong>
+<div class="table-subcopy">{{ student.prn if student else "" }}</div>
+</td>
+<td>
+<strong>{{ item.project_title }}</strong>
+<div class="table-subcopy">{{ item.submitted_at.strftime("%d %b %Y %I:%M %p") if item.submitted_at else "--" }}</div>
+</td>
+<td>{{ batch.name if batch else "Not Assigned" }}</td>
+<td>{{ mentor.name if mentor else "Not Assigned" }}</td>
+<td>
+{% if item.archive_file %}
+<a class="btn-view" href="{{ url_for('admin.download_file', filename=item.archive_file) }}">
+<i class="fas fa-download"></i> Download ZIP
+</a>
+{% else %}
+<span class="text-muted">No archive</span>
+{% endif %}
+</td>
+<td>
+<div class="action-buttons-row compact-links">
+{% if item.github_link %}
+<a class="btn-edit btn-sm-custom" href="{{ item.github_link }}" target="_blank" rel="noopener noreferrer">GitHub</a>
+{% endif %}
+{% if item.live_link %}
+<a class="btn-edit btn-sm-custom" href="{{ item.live_link }}" target="_blank" rel="noopener noreferrer">Live Link</a>
+{% endif %}
+{% if not item.github_link and not item.live_link %}
+<span class="text-muted">No links</span>
+{% endif %}
+</div>
+</td>
+<td>
+{% if item.status == "approved" %}
+<span class="status-badge approved">Approved</span>
+{% elif item.status == "rejected" %}
+<span class="status-badge rejected">Rejected</span>
+{% else %}
+<span class="status-badge pending">Pending</span>
+{% endif %}
+</td>
+<td class="action-buttons">
+{% if item.can_review and item.status == "pending" %}
+<div class="action-buttons-row">
+<button class="btn-approve" onclick="openAdminFinalRemark('{{ item._id }}','approve')">Approve</button>
+<button class="btn-reject" onclick="openAdminFinalRemark('{{ item._id }}','reject')">Reject</button>
+</div>
+{% elif item.can_review %}
+<span class="text-muted">Reviewed</span>
+{% else %}
+<span class="text-muted">View Only</span>
+{% endif %}
+</td>
+</tr>
+{% else %}
+<tr>
+<td colspan="8" class="text-muted">No final projects found for the selected academic session.</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<div id="adminFinalRemarkModal" class="remark-modal">
+<div class="remark-content">
+<h4>Final Project Remark</h4>
+<form id="adminFinalRemarkForm" method="POST">
+<textarea name="remark" placeholder="Write feedback..." required></textarea>
+<div class="remark-actions">
+<button type="submit" class="btn-approve">Submit</button>
+<button type="button" class="btn-reject" onclick="closeAdminFinalRemark()">Cancel</button>
+</div>
+</form>
+</div>
+</div>
+
+<script>
+function openAdminFinalRemark(id, type){
+const modal = document.getElementById("adminFinalRemarkModal");
+const form = document.getElementById("adminFinalRemarkForm");
+
+if(type === "approve"){
+form.action = "/admin/approve-final-project/" + id;
+}else{
+form.action = "/admin/reject-final-project/" + id;
+}
+
+modal.style.display = "flex";
+}
+
+function closeAdminFinalRemark(){
+document.getElementById("adminFinalRemarkModal").style.display = "none";
+}
+</script>
+
+{% endblock %}

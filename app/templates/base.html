@@ -30,6 +30,7 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 <span class="logo-text">ZIBACAR</span>
 </a>
 
+<div class="sidebar-menu">
 <ul class="nav flex-column mt-3">
 
 {% if current_user.role == "admin" %}
@@ -67,6 +68,12 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 <li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='admin.manage_students' %}active-link{% endif %}" href="{{ url_for('admin.manage_students') }}">
 <i class="fa fa-user-graduate sidebar-icon"></i> Students
+</a>
+</li>
+
+<li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='admin.admin_final_projects' %}active-link{% endif %}" href="{{ url_for('admin.admin_final_projects') }}">
+<i class="fa fa-folder-tree sidebar-icon"></i> Project Submissions
 </a>
 </li>
 
@@ -112,6 +119,12 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 </a>
 </li>
 
+<li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='admin.mentor_final_projects' %}active-link{% endif %}" href="{{ url_for('admin.mentor_final_projects') }}">
+<i class="fa fa-folder-tree sidebar-icon"></i> Final Projects
+</a>
+</li>
+
 
 
 <li class="nav-item">
@@ -142,12 +155,19 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 </a>
 </li>
 
+<li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='student.final_project_page' %}active-link{% endif %}" href="{{ url_for('student.final_project_page') }}">
+<i class="fa fa-folder-tree sidebar-icon"></i> Final Project
+</a>
+</li>
+
 
 {% endif %}
 
 </ul>
+</div>
 
-<div class="mt-auto p-3">
+<div class="sidebar-footer">
 <a href="{{ url_for('auth.logout') }}" class="btn btn-danger w-100">
 Sign Out
 </a>

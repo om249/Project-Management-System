@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">Final Projects</h2>
+
+<div class="card">
+{% if batch_notice %}
+<div class="empty-state-panel">
+<h4>Batch Not Allocated Yet</h4>
+<p>{{ batch_notice }}</p>
+</div>
+{% else %}
+<table class="custom-table">
+<thead>
+<tr>
+<th>Student</th>
+<th>Project</th>
+<th>Archive</th>
+<th>Links</th>
+<th>Submitted On</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+{% for item in final_projects %}
+{% set student = student_map.get(item.student_id|string) %}
+<tr>
+<td>
+<strong>{{ student.name if student else "Unknown Student" }}</strong>
+<div class="table-subcopy">{{ student.prn if student else "" }}</div>
+</td>
+<td>
+<strong>{{ item.project_title }}</strong>
+<div class="table-subcopy">{{ item.description if item.description else "No description provided." }}</div>
+</td>
+<td>
+{% if item.archive_file %}
+<a class="btn-view" href="{{ url_for('admin.download_file', filename=item.archive_file) }}">
+<i class="fas fa-download"></i> Download ZIP
+</a>
+{% else %}
+<span class="text-muted">No archive</span>
+{% endif %}
+</td>
+<td>
+<div class="action-buttons-row compact-links">
+{% if item.github_link %}
+<a class="btn-edit btn-sm-custom" href="{{ item.github_link }}" target="_blank" rel="noopener noreferrer">GitHub</a>
+{% endif %}
+{% if item.live_link %}
+<a class="btn-edit btn-sm-custom" href="{{ item.live_link }}" target="_blank" rel="noopener noreferrer">Live Link</a>
+{% endif %}
+{% if not item.github_link and not item.live_link %}
+<span class="text-muted">No links</span>
+{% endif %}
+</div>
+</td>
+<td>{{ item.submitted_at.strftime("%d %b %Y %I:%M %p") if item.submitted_at else "--" }}</td>
+<td>
+{% if item.status == "approved" %}
+<span class="status-badge approved">Approved</span>
+{% elif item.status == "rejected" %}
+<span class="status-badge rejected">Rejected</span>
+{% else %}
+<span class="status-badge pending">Pending</span>
+{% endif %}
+</td>
+<td class="action-buttons">
+<div class="action-buttons-row">
+{% if item.status == "pending" %}
+<button class="btn-approve" onclick="openFinalRemark('{{ item._id }}','approve')">Approve</button>
+<button class="btn-reject" onclick="openFinalRemark('{{ item._id }}','reject')">Reject</button>
+{% else %}
+<span class="text-muted">Reviewed</span>
+{% endif %}
+</div>
+</td>
+</tr>
+{% else %}
+<tr>
+<td colspan="7" class="text-muted">No final projects have been submitted for this batch yet.</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endif %}
+</div>
+
+<div id="finalRemarkModal" class="remark-modal">
+<div class="remark-content">
+<h4>Final Project Remark</h4>
+<form id="finalRemarkForm" method="POST">
+<textarea name="remark" placeholder="Write feedback..." required></textarea>
+<div class="remark-actions">
+<button type="submit" class="btn-approve">Submit</button>
+<button type="button" class="btn-reject" onclick="closeFinalRemark()">Cancel</button>
+</div>
+</form>
+</div>
+</div>
+
+<script>
+function openFinalRemark(id, type){
+const modal = document.getElementById("finalRemarkModal");
+const form = document.getElementById("finalRemarkForm");
+
+if(type === "approve"){
+form.action = "/admin/approve-final-project/" + id;
+}else{
+form.action = "/admin/reject-final-project/" + id;
+}
+
+modal.style.display = "flex";
+}
+
+function closeFinalRemark(){
+document.getElementById("finalRemarkModal").style.display = "none";
+}
+</script>
+
+{% endblock %}

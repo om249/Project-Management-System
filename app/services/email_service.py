@@ -1,4 +1,6 @@
 import smtplib
+import socket
+import time
 from email.mime.text import MIMEText
 from flask import current_app
 
@@ -10,23 +12,45 @@ def send_email(to_email, subject, html_content):
     mail_server = current_app.config["MAIL_SERVER"] or "smtp.gmail.com"
     mail_port = current_app.config["MAIL_PORT"] or 587
     use_tls = current_app.config.get("MAIL_USE_TLS", True)
+    smtp_timeout = current_app.config.get("MAIL_TIMEOUT", 15)
+    retry_limit = current_app.config.get("MAIL_RETRY_LIMIT", 2)
 
     msg = MIMEText(html_content, "html")
     msg["Subject"] = subject
     msg["From"] = sender
     msg["To"] = to_email
 
-    try:
-        server = smtplib.SMTP(mail_server, mail_port)
-        if use_tls:
-            server.starttls()
-        server.login(sender, password)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        print("Email Error:", e)
-        return False
+    last_error = None
+
+    for attempt in range(1, retry_limit + 1):
+        server = None
+        try:
+            server = smtplib.SMTP(mail_server, mail_port, timeout=smtp_timeout)
+            server.ehlo()
+            if use_tls:
+                server.starttls()
+                server.ehlo()
+            server.login(sender, password)
+            server.send_message(msg)
+            server.quit()
+            return True
+        except (smtplib.SMTPException, OSError, socket.timeout) as e:
+            last_error = e
+            print(f"Email Error (attempt {attempt}/{retry_limit}):", e)
+
+            if server:
+                try:
+                    server.quit()
+                except Exception:
+                    try:
+                        server.close()
+                    except Exception:
+                        pass
+
+            if attempt < retry_limit:
+                time.sleep(1)
+
+    return False
 
 
 def email_shell(category, title, intro_html, body_html):
@@ -188,6 +212,40 @@ def status_email(stage, status, remark=""):
         f"""
         <div style="padding:18px;border-radius:16px;background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;">
             Please review the update in the portal and make any required changes for the next Progress Report.
+        </div>
+        {remark_html}
+        """
+    )
+
+
+def final_project_submission_email(student_name, project_title):
+    return email_shell(
+        "ZIBACAR Final Project",
+        "A final project is ready for review",
+        f"<b>{student_name}</b> submitted the final project <b>{project_title}</b>.",
+        """
+        <div style="padding:18px;border-radius:16px;background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;">
+            Please log in to the portal to download the project archive, open any shared repository or live link, and review the final submission.
+        </div>
+        """
+    )
+
+
+def final_project_status_email(project_title, status, remark=""):
+    remark_html = (
+        f"<p style='margin:18px 0 0;'><b>Mentor Remark:</b><br>{remark}</p>"
+        if remark else
+        "<p style='margin:18px 0 0;'><b>Mentor Remark:</b><br>No additional remark was provided.</p>"
+    )
+    status_color = "#166534" if str(status).lower() == "approved" else "#991b1b"
+
+    return email_shell(
+        "ZIBACAR Final Project",
+        f"Your final project was {status}",
+        f"Your final project <b>{project_title}</b> has been marked as <b style='color:{status_color};'>{status}</b>.",
+        f"""
+        <div style="padding:18px;border-radius:16px;background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;">
+            Please sign in to the portal to review the final decision and any mentor feedback.
         </div>
         {remark_html}
         """

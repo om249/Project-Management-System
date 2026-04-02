@@ -10,8 +10,9 @@ from werkzeug.utils import secure_filename
 from app.services.email_service import late_submission_email
 from app.services.notification_service import create_notification, get_notifications, mark_notifications_read
 from app.services.file_converter import convert_to_pdf
-from app.services.email_service import send_email, submission_email, late_submission_email
+from app.services.email_service import send_email, submission_email, late_submission_email, final_project_submission_email
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
 
@@ -53,6 +54,33 @@ def validate_password_rules(password):
     if not re.search(r"[^A-Za-z0-9]", password):
         return "Password must contain at least 1 symbol."
     return None
+
+
+def is_valid_web_link(value):
+    if not value:
+        return True
+
+    parsed = urlparse(value.strip())
+    return parsed.scheme in ["http", "https"] and bool(parsed.netloc)
+
+
+def save_final_project_archive(file_storage, student_id):
+    if not file_storage or not file_storage.filename:
+        return None
+
+    original_name = secure_filename(file_storage.filename)
+    _, extension = os.path.splitext(original_name)
+    extension = extension.lower()
+
+    if extension != ".zip":
+        return None
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_folder, exist_ok=True)
+
+    filename = f"final-project-{student_id}-{int(datetime.utcnow().timestamp())}{extension}"
+    file_storage.save(os.path.join(upload_folder, filename))
+    return filename
 
 
 # ---------------- STUDENT LOGIN ----------------
@@ -375,8 +403,30 @@ def submissions():
         "student/submissions.html",
         stages=stages,
         submission_dict=submission_dict,
-        deadline_dict=deadline_dict,
-        
+        deadline_dict=deadline_dict
+    )
+
+
+@student_bp.route("/final-project")
+@login_required
+@role_required("student")
+def final_project_page():
+
+    student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
+    batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student.get("batch_id") else None
+    mentor = None
+
+    if batch and batch.get("mentor_id"):
+        mentor = current_app.db.users.find_one({"_id": batch["mentor_id"]})
+
+    final_project = current_app.db.final_submissions.find_one({"student_id": student["_id"]})
+
+    return render_template(
+        "student/final_project.html",
+        student=student,
+        batch=batch,
+        mentor=mentor,
+        final_project=final_project
     )
 
 # @student_bp.route("/upload/<stage_id>", methods=["POST"])
@@ -661,3 +711,121 @@ def upload_stage(stage_id):
 
     flash("File uploaded successfully")
     return redirect(url_for("student.dashboard"))
+
+
+@student_bp.route("/final-project-submission", methods=["POST"])
+@login_required
+@role_required("student")
+def final_project_submission():
+
+    student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
+    batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student.get("batch_id") else None
+
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    github_link = request.form.get("github_link", "").strip()
+    live_link = request.form.get("live_link", "").strip()
+    archive = request.files.get("project_archive")
+
+    if not title:
+        flash("Project title is required.", "warning")
+        return redirect(url_for("student.submissions"))
+
+    if not batch:
+        flash("Final project submission is available after your batch is assigned.", "warning")
+        return redirect(url_for("student.submissions"))
+
+    if not archive or not archive.filename:
+        flash("Project ZIP file is required.", "warning")
+        return redirect(url_for("student.submissions"))
+
+    if not is_valid_web_link(github_link):
+        flash("Enter a valid GitHub link starting with http:// or https://", "warning")
+        return redirect(url_for("student.submissions"))
+
+    if not is_valid_web_link(live_link):
+        flash("Enter a valid live/demo link starting with http:// or https://", "warning")
+        return redirect(url_for("student.submissions"))
+
+    existing_submission = current_app.db.final_submissions.find_one({"student_id": student["_id"]})
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_folder, exist_ok=True)
+
+    if existing_submission and existing_submission.get("archive_file"):
+        old_archive = os.path.join(upload_folder, existing_submission["archive_file"])
+        if os.path.exists(old_archive):
+            try:
+                os.remove(old_archive)
+            except OSError:
+                pass
+
+    archive_file = save_final_project_archive(archive, student["_id"])
+    if not archive_file:
+        flash("Only ZIP files are allowed for the final project archive.", "warning")
+        return redirect(url_for("student.submissions"))
+
+    now = datetime.utcnow()
+    mentor_id = batch.get("mentor_id") if batch else None
+    if mentor_id:
+        mentor_id = ObjectId(mentor_id)
+
+    current_app.db.final_submissions.update_one(
+        {"student_id": student["_id"]},
+        {
+            "$set": {
+                "student_id": student["_id"],
+                "batch_id": batch["_id"] if batch else None,
+                "mentor_id": mentor_id,
+                "session_id": student.get("session_id"),
+                "project_title": title,
+                "description": description,
+                "archive_file": archive_file,
+                "github_link": github_link,
+                "live_link": live_link,
+                "status": "pending",
+                "submitted_at": now,
+                "updated_at": now
+            },
+            "$unset": {
+                "remark": "",
+                "reviewed_at": ""
+            }
+        },
+        upsert=True
+    )
+
+    student_name = student.get("name", "Student")
+    notification_message = f"{student_name} submitted final project: {title}"
+    emailed_addresses = set()
+
+    if mentor_id:
+        create_notification(mentor_id, notification_message)
+        mentor = current_app.db.users.find_one({"_id": mentor_id})
+        mentor_email = (mentor or {}).get("email")
+        if mentor_email:
+            try:
+                send_email(
+                    mentor_email,
+                    "Final Project Submission",
+                    final_project_submission_email(student_name, title)
+                )
+                emailed_addresses.add(mentor_email)
+            except Exception as e:
+                print("Email error:", e)
+
+    admin = current_app.db.users.find_one({"role": "admin"})
+    if admin and (not mentor_id or str(admin["_id"]) != str(mentor_id)):
+        create_notification(admin["_id"], notification_message)
+        admin_email = admin.get("email")
+        if admin_email and admin_email not in emailed_addresses:
+            try:
+                send_email(
+                    admin_email,
+                    "Final Project Submission",
+                    final_project_submission_email(student_name, title)
+                )
+            except Exception as e:
+                print("Email error:", e)
+
+    flash("Final project submitted successfully.", "success")
+    return redirect(url_for("student.submissions"))

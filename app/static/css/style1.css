@@ -91,6 +91,8 @@ button,
     display: flex;
     flex-direction: column;
     padding: 26px 18px 20px;
+    height: 100vh;
+    overflow: hidden;
     color: #f8fbff;
      background: linear-gradient(180deg, rgba(14, 24, 48, 0.98) 0%, rgba(21, 37, 84, 0.97) 54%, rgba(12, 74, 110, 0.96) 100%);
     box-shadow: 14px 0 40px rgba(15, 23, 42, 0.22);
@@ -143,6 +145,27 @@ button,
     list-style: none;
 }
 
+.sidebar-menu {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.sidebar-menu::-webkit-scrollbar {
+    width: 8px;
+}
+
+.sidebar-menu::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 999px;
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb {
+    background: rgba(191, 219, 254, 0.26);
+    border-radius: 999px;
+}
+
 .sidebar .nav-item {
     margin-bottom: 6px;
 }
@@ -191,6 +214,13 @@ button,
 .sidebar .btn.btn-danger:hover {
     transform: translateY(-2px);
     box-shadow: 0 20px 34px rgba(127, 29, 29, 0.28);
+}
+
+.sidebar-footer {
+    margin-top: 14px;
+    padding: 12px 6px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(11, 18, 36, 0), rgba(11, 18, 36, 0.24));
 }
 
 .content {
@@ -2558,15 +2588,87 @@ small {
         border-bottom: 1px solid rgba(226, 232, 240, 0.9);
     }
 
-    .session-toolbar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
     .assign-header {
         flex-direction: column;
         align-items: stretch;
     }
+}
+
+.form-grid.two-col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.form-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.form-card label {
+    font-weight: 700;
+    color: #32435f;
+}
+
+.form-card textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.final-project-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+    gap: 24px;
+    align-items: flex-start;
+}
+
+.final-project-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.final-project-status-card {
+    padding: 24px;
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(235, 245, 255, 0.9));
+    border: 1px solid rgba(191, 219, 254, 0.8);
+    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+}
+
+.final-project-status-card p {
+    margin: 14px 0 0;
+    color: #5b6f8f;
+    line-height: 1.7;
+}
+
+.table-subcopy {
+    margin-top: 6px;
+    color: #6b7f9f;
+    font-size: 0.94rem;
+    line-height: 1.5;
+}
+
+.compact-links {
+    flex-wrap: wrap;
+}
+
+.empty-state-panel {
+    padding: 34px 28px;
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(235, 245, 255, 0.88));
+    border: 1px dashed rgba(147, 197, 253, 0.9);
+}
+
+.empty-state-panel h4 {
+    margin: 0 0 10px;
+    color: #1e3356;
+}
+
+.empty-state-panel p {
+    margin: 0;
+    color: #60738f;
 }
 
 @media (max-width: 767px) {
@@ -2612,6 +2714,11 @@ small {
     }
 
     .login-role-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .form-grid.two-col,
+    .final-project-shell {
         grid-template-columns: 1fr;
     }
 

@@ -16,7 +16,7 @@ from app import bcrypt
 from flask import send_from_directory
 from werkzeug.utils import secure_filename
 from app.services.notification_service import get_notifications, create_notification,  mark_notifications_read
-from app.services.email_service import send_email, student_welcome_email, faculty_welcome_email, submission_email, late_submission_email, status_email, mentor_assignment_email, student_mentor_assigned_email
+from app.services.email_service import send_email, student_welcome_email, faculty_welcome_email, submission_email, late_submission_email, status_email, mentor_assignment_email, student_mentor_assigned_email, final_project_status_email
 from app.routes.student_routes import submissions
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -1795,6 +1795,189 @@ def mentor_submissions():
         batch=batch,
         batch_notice=None
     )
+
+
+@admin_bp.route("/mentor-final-projects")
+@login_required
+@mentor_access_required
+def mentor_final_projects():
+
+    mentor_id = ObjectId(current_user.id)
+    batch, _, _ = get_faculty_assigned_batch(mentor_id, request.args.get("session"))
+
+    if not batch:
+        return render_template(
+            "faculty/final_projects.html",
+            final_projects=[],
+            student_map={},
+            batch=None,
+            batch_notice="No batch is allocated to you till now."
+        )
+
+    students = list(current_app.db.students.find({"batch_id": batch["_id"]}))
+    student_ids = [student["_id"] for student in students]
+    student_map = {str(student["_id"]): student for student in students}
+
+    final_projects = list(
+        current_app.db.final_submissions.find({"student_id": {"$in": student_ids}}).sort("submitted_at", -1)
+    )
+
+    return render_template(
+        "faculty/final_projects.html",
+        final_projects=final_projects,
+        student_map=student_map,
+        batch=batch,
+        batch_notice=None
+    )
+
+
+@admin_bp.route("/final-projects")
+@login_required
+@role_required("admin")
+def admin_final_projects():
+
+    selected_session_id = request.args.get("session")
+    sessions, selected_session = get_selected_session(selected_session_id)
+    final_projects = list(
+        current_app.db.final_submissions.find({
+            "$or": [
+                {"session_id": selected_session["_id"]},
+                {"session_id": {"$exists": False}}
+            ]
+        }).sort("submitted_at", -1)
+    )
+
+    student_map = {}
+    mentor_map = {}
+    batch_map = {}
+    current_admin_batch, _, _ = get_faculty_assigned_batch(ObjectId(current_user.id), selected_session_id)
+    reviewable_batch_id = str(current_admin_batch["_id"]) if current_admin_batch else None
+
+    for item in final_projects:
+        student = current_app.db.students.find_one({"_id": item["student_id"]})
+        if student:
+            student_map[str(student["_id"])] = student
+
+        mentor_id = item.get("mentor_id")
+        if mentor_id and str(mentor_id) not in mentor_map:
+            mentor_map[str(mentor_id)] = current_app.db.users.find_one({"_id": mentor_id})
+
+        batch_id = item.get("batch_id")
+        if batch_id and str(batch_id) not in batch_map:
+            batch_map[str(batch_id)] = current_app.db.batches.find_one({"_id": batch_id})
+
+        item["can_review"] = bool(reviewable_batch_id and batch_id and str(batch_id) == reviewable_batch_id)
+
+    return render_template(
+        "admin/final_projects.html",
+        final_projects=final_projects,
+        student_map=student_map,
+        mentor_map=mentor_map,
+        batch_map=batch_map,
+        sessions=sessions,
+        selected_session=selected_session
+    )
+
+
+def can_review_final_project(final_project):
+    if not final_project:
+        return False
+
+    batch = current_app.db.batches.find_one({"_id": final_project.get("batch_id")}) if final_project.get("batch_id") else None
+    if not batch:
+        return False
+
+    return batch.get("mentor_id") and str(batch.get("mentor_id")) == str(current_user.id)
+
+
+def final_project_review_redirect():
+    if current_user.role == "admin":
+        return redirect(url_for("admin.admin_final_projects"))
+    return redirect(url_for("admin.mentor_final_projects"))
+
+
+@admin_bp.route("/approve-final-project/<submission_id>", methods=["POST"])
+@login_required
+@mentor_access_required
+def approve_final_project(submission_id):
+
+    final_project = current_app.db.final_submissions.find_one({"_id": ObjectId(submission_id)})
+    if not can_review_final_project(final_project):
+        flash("You can only review final projects from students assigned to your batch.", "warning")
+        return final_project_review_redirect()
+
+    remark = request.form.get("remark")
+
+    current_app.db.final_submissions.update_one(
+        {"_id": final_project["_id"]},
+        {
+            "$set": {
+                "status": "approved",
+                "remark": remark,
+                "reviewed_at": datetime.utcnow()
+            }
+        }
+    )
+
+    student = current_app.db.students.find_one({"_id": final_project["student_id"]})
+    project_title = final_project.get("project_title", "Final Project")
+
+    create_notification(student["_id"], f"Final project '{project_title}' approved by mentor")
+
+    if student and student.get("email"):
+        try:
+            send_email(
+                student["email"],
+                "Final Project Approved",
+                final_project_status_email(project_title, "Approved", remark)
+            )
+        except Exception as e:
+            print("Email error:", e)
+
+    flash("Final project approved.", "success")
+    return final_project_review_redirect()
+
+
+@admin_bp.route("/reject-final-project/<submission_id>", methods=["POST"])
+@login_required
+@mentor_access_required
+def reject_final_project(submission_id):
+
+    final_project = current_app.db.final_submissions.find_one({"_id": ObjectId(submission_id)})
+    if not can_review_final_project(final_project):
+        flash("You can only review final projects from students assigned to your batch.", "warning")
+        return final_project_review_redirect()
+
+    remark = request.form.get("remark")
+
+    current_app.db.final_submissions.update_one(
+        {"_id": final_project["_id"]},
+        {
+            "$set": {
+                "status": "rejected",
+                "remark": remark,
+                "reviewed_at": datetime.utcnow()
+            }
+        }
+    )
+
+    student = current_app.db.students.find_one({"_id": final_project["student_id"]})
+    project_title = final_project.get("project_title", "Final Project")
+
+    create_notification(student["_id"], f"Final project '{project_title}' rejected by mentor")
+
+    if student and student.get("email"):
+        try:
+            send_email(
+                student["email"],
+                "Final Project Rejected",
+                final_project_status_email(project_title, "Rejected", remark)
+            )
+        except Exception as e:
+            print("Email error:", e)
+
+    flash("Final project rejected.", "success")
+    return final_project_review_redirect()
 
 @admin_bp.route("/approve-submission/<submission_id>", methods=["POST"])
 @login_required
