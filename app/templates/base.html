@@ -36,16 +36,17 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 {% if current_user.role == "admin" %}
 
 <li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='admin.dashboard' %}active-link{% endif %}" href="{{ url_for('admin.dashboard') }}">
+<i class="fa fa-chart-line sidebar-icon"></i> Dashboard
+</a>
+</li>
+
+<li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='admin.admin_profile' %}active-link{% endif %}" href="{{ url_for('admin.admin_profile') }}" style="gap:11px; margin-left: 2px;">
 <i class="fa fa-user-shield"></i> Profile
 </a>
 </li>
 
-<li class="nav-item">
-<a class="nav-link text-white {% if request.endpoint=='admin.dashboard' %}active-link{% endif %}" href="{{ url_for('admin.dashboard') }}">
-<i class="fa fa-chart-line sidebar-icon"></i> Dashboard
-</a>
-</li>
 
 <li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='admin.manage_batches' %}active-link{% endif %}" href="{{ url_for('admin.manage_batches') }}">
@@ -102,16 +103,18 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 {% if current_user.role == "faculty" %}
 
 <li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='admin.faculty_dashboard' %}active-link{% endif %}" href="{{ url_for('admin.faculty_dashboard') }}">
+<i class="fa fa-chart-line sidebar-icon"></i> Dashboard
+</a>
+</li>
+
+
+<li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='admin.faculty_profile' %}active-link{% endif %}" href="{{ url_for('admin.faculty_profile') }}" style="gap:18px; margin-left: 4px;">
 <i class="fas fa-id-badge" ></i> Profile
 </a>
 </li>
 
-<li class="nav-item">
-<a class="nav-link text-white {% if request.endpoint=='admin.faculty_dashboard' %}active-link{% endif %}" href="{{ url_for('admin.faculty_dashboard') }}">
-<i class="fa fa-chart-line sidebar-icon"></i> Dashboard
-</a>
-</li>
 
 <li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='admin.mentor_submissions' %}active-link{% endif %}" href="{{ url_for('admin.mentor_submissions') }}">
@@ -138,16 +141,18 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 {% if current_user.role == "student" %}
 
 <li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='student.dashboard' %}active-link{% endif %}" href="{{ url_for('student.dashboard') }}">
+<i class="fa fa-home sidebar-icon"></i> Dashboard
+</a>
+</li>
+
+
+<li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='student.profile' %}active-link{% endif %}" href="{{ url_for('student.student_profile') }}" style="gap:16px; margin-left: 4px;">
 <i class="fa fa-user-graduate"></i> Profile
 </a>
 </li>
 
-<li class="nav-item">
-<a class="nav-link text-white {% if request.endpoint=='student.dashboard' %}active-link{% endif %}" href="{{ url_for('student.dashboard') }}">
-<i class="fa fa-home sidebar-icon"></i> Dashboard
-</a>
-</li>
 
 <li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='student.submissions' %}active-link{% endif %}" href="{{ url_for('student.submissions') }}">
