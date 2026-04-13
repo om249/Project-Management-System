@@ -17,10 +17,10 @@
 </div>
 
 <table class="custom-table modern-table">
-
 <thead>
 <tr>
 <th>Stage</th>
+<th>Reference Document</th>
 <th>Deadline</th>
 <th>Upload</th>
 <th>Status</th>
@@ -34,11 +34,29 @@
 
 {% set sub = submission_dict.get(stage._id|string) %}
 {% set deadline = deadline_dict.get(stage._id|string) %}
+{% set stage_document = progress_document_dict.get(stage._id|string) %}
 
-<tr class="table-row">
+<tr class="table-row" data-stage-id="{{ stage._id }}">
 
 <td class="stage-col">
 <strong>{{ stage.name }}</strong>
+</td>
+
+<td>
+{% if stage_document %}
+{% set preview_file = stage_document.get('pdf_file') %}
+{% if preview_file %}
+<button type="button"
+class="btn-view"
+onclick="openFileViewer('/admin/view-file/{{ preview_file }}', '/admin/download/{{ stage_document.file_name }}')">
+<i class="fas fa-eye"></i> View Format
+</button>
+{% else %}
+<span class="muted">Preview unavailable</span>
+{% endif %}
+{% else %}
+<span class="muted">Not uploaded</span>
+{% endif %}
 </td>
 
 <td>
@@ -54,7 +72,8 @@
 <form method="POST"
 action="{{ url_for('student.upload_stage', stage_id=stage._id) }}"
 enctype="multipart/form-data"
-class="upload-box">
+class="upload-box"
+data-stage-id="{{ stage._id }}">
 
 <label class="file-upload submission-file-upload">
 <input type="file"
@@ -65,39 +84,41 @@ required>
 <span id="fileLabel-{{ stage._id }}" class="submission-file-trigger">Choose File</span>
 </label>
 
+<div class="upload-buttons">
 {% if sub and sub.get('file_name') %}
-<button class="btn-primary">
+<button type="submit" class="btn-primary reupload-btn">
 <i class="fas fa-sync"></i> Reupload
 </button>
 
 {% set file = sub.get('pdf_file') or sub.get('file_name') %}
 
+{% if file %}
 <button type="button"
-class="btn-view"
+class="btn-view view-btn"
 onclick="openFileViewer('/admin/view-file/{{ file }}', '/admin/download/{{ file }}')">
-<i class="fas fa-eye"></i>View
+<i class="fas fa-eye"></i> View
 </button>
+{% endif %}
 
 {% else %}
 
-<button class="btn-primary">
+<button type="submit" class="btn-primary upload-btn">
 <i class="fas fa-upload"></i> Upload
 </button>
 
 {% endif %}
+</div>
 
 </form>
 
 </td>
 
-<td>
+<td class="status-col">
 {% if sub %}
     {% if sub.get("status") == "approved" %}
         <span class="badge approved">Approved</span>
-
     {% elif sub.get("status") == "rejected" %}
         <span class="badge rejected">Rejected</span>
-
     {% else %}
         <span class="badge pending">Pending</span>
     {% endif %}
@@ -165,32 +186,98 @@ onclick="openFileViewer('/admin/view-file/{{ file }}', '/admin/download/{{ file 
 </div>
 
 <script>
-
 document.addEventListener("DOMContentLoaded", function(){
-document.querySelectorAll(".submission-file-input").forEach(function(input){
-input.addEventListener("change", function(){
-const label = document.getElementById(this.dataset.labelId);
-if(!label){
-return;
-}
+  // File label update
+  document.querySelectorAll(".submission-file-input").forEach(function(input){
+    input.addEventListener("change", function(){
+      const label = document.getElementById(this.dataset.labelId);
+      if(!label) return;
+      label.textContent = this.files && this.files[0] ? this.files[0].name : "No file selected";
+    });
+  });
 
-if(this.files && this.files.length > 0){
-label.textContent = this.files[0].name;
-}else{
-label.textContent = "No file selected";
-}
-});
-});
+  // AJAX Upload
+  document.querySelectorAll('.upload-box form').forEach(function(form) {
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const row = this.closest('tr');
+      const stageId = this.dataset.stageId || row.dataset.stageId;
+      const uploadBtn = this.querySelector('.btn-primary');
+      const statusCol = row.querySelector('.status-col');
+      const buttonsDiv = this.querySelector('.upload-buttons');
+      
+      // Loading state
+      uploadBtn.disabled = true;
+      uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+      statusCol.innerHTML = '<span class="badge info">Uploading...</span>';
+      
+      const formData = new FormData(this);
+      
+      try {
+        const response = await fetch(this.action, {
+          method: 'POST',
+          body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Success: Update UI
+          statusCol.innerHTML = '<span class="badge pending">Pending</span>';
+          
+          // Update buttons
+          let btnHtml = '<button type="submit" class="btn-primary reupload-btn"><i class="fas fa-sync"></i> Reupload</button>';
+          
+          if (data.pdf_file) {
+            btnHtml += `<button type="button" class="btn-view view-btn" onclick="openFileViewer('/admin/view-file/${data.pdf_file}', '/admin/download/${data.filename}')">
+              <i class="fas fa-eye"></i> View
+            </button>`;
+          }
+          
+          buttonsDiv.innerHTML = btnHtml;
+          
+          // Success message
+          showToast('Upload successful! Preview ready.', 'success');
+        } else {
+          statusCol.innerHTML = '<span class="badge neutral">Not Submitted</span>';
+          showToast(data.error || 'Upload failed', 'danger');
+        }
+      } catch (error) {
+        statusCol.innerHTML = '<span class="badge neutral">Not Submitted</span>';
+        showToast('Network error. Please try again.', 'danger');
+        console.error('Upload error:', error);
+      } finally {
+        uploadBtn.disabled = false;
+        if (!uploadBtn.querySelector('.fa-sync, .fa-upload')) {
+          uploadBtn.innerHTML = uploadBtn.classList.contains('reupload-btn') ? '<i class="fas fa-sync"></i> Reupload' : '<i class="fas fa-upload"></i> Upload';
+        }
+      }
+    });
+  });
+  
+  function showToast(message, type = 'info') {
+    // Simple toast notification
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;padding:12px 20px;border-radius:5px;color:white;max-width:300px;';
+    if (type === 'success') toast.style.background = '#28a745';
+    else if (type === 'danger') toast.style.background = '#dc3545';
+    else if (type === 'info') toast.style.background = '#17a2b8';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
 });
 
 function openFileViewer(url, downloadUrl){
-document.getElementById("fileFrame").src = url;
-document.getElementById("downloadBtn").href = downloadUrl;
-document.getElementById("fileModal").style.display = "flex";
+  document.getElementById("fileFrame").src = url;
+  document.getElementById("downloadBtn").href = downloadUrl;
+  document.getElementById("fileModal").style.display = "flex";
 }
 
 function closeViewer(){
-document.getElementById("fileModal").style.display = "none";
+  document.getElementById("fileModal").style.display = "none";
 }
 
 </script>

@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify
 from flask_login import login_required, login_user, logout_user, current_user
 from bson.objectid import ObjectId
 from datetime import datetime
@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
-
 
 def save_profile_photo(file_storage, user_id):
     if not file_storage or not file_storage.filename:
@@ -106,66 +105,6 @@ def student_login():
 
 
 # ---------------- STUDENT DASHBOARD ----------------
-# @student_bp.route("/dashboard")
-# @login_required
-# @role_required("student")
-# def dashboard():
-
-#     student = current_app.db.students.find_one({
-#         "_id": ObjectId(current_user.id)
-#     })
-
-#     batch = current_app.db.batches.find_one({
-#         "_id": student["batch_id"]
-#     })
-
-#     stages = list(current_app.db.stages.find().sort("order", 1))
-
-#     deadlines = list(current_app.db.deadlines.find({
-#         "batch_id": batch["_id"]
-#     }))
-
-#     deadline_dict = {}
-#     for d in deadlines:
-#         deadline_dict[str(d["stage_id"])] = d["deadline"]
-
-#     # submissions = list(current_app.db.submissions.find({
-#     #     "student_id": ObjectId(current_user.id)
-#     # }))
-    
-#     submissions = list(current_app.db.submissions.find({
-#         "student_id": student["_id"]
-#     }))
-
-#     submission_dict = {}
-#     for s in submissions:
-#         submission_dict[str(s["stage_id"])] = s
-
-    
-#     total_stages = len(stages)
-
-#     completed = 0
-
-#     for stage in stages:
-#         sub = submission_dict.get(str(stage["_id"]))
-
-#         if sub and sub.get("status") == "approved":
-#             completed += 1
-
-#     progress = 0
-
-#     if total_stages > 0:
-#         progress = int((completed / total_stages) * 100)
-
-#     return render_template(
-#         "student/dashboard.html",
-#         stages=stages,
-#         deadline_dict=deadline_dict,
-#         submission_dict=submission_dict,
-#         progress=progress,
-#         batch=batch
-#     )
-
 @student_bp.route("/dashboard")
 @login_required
 @role_required("student")
@@ -289,7 +228,6 @@ def dashboard():
                     },
                     upsert=True
                 )
-            
 
     return render_template(
         "student/dashboard.html",
@@ -399,11 +337,21 @@ def submissions():
     for d in deadlines:
         deadline_dict[str(d["stage_id"])] = d["deadline"]
 
+    progress_document_dict = {}
+    batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student.get("batch_id") else None
+    if batch and batch.get("session_id"):
+        progress_documents = current_app.db.progress_documents.find({
+            "session_id": batch["session_id"]
+        })
+        for document in progress_documents:
+            progress_document_dict[str(document.get("stage_id"))] = document
+
     return render_template(
         "student/submissions.html",
         stages=stages,
         submission_dict=submission_dict,
-        deadline_dict=deadline_dict
+        deadline_dict=deadline_dict,
+        progress_document_dict=progress_document_dict
     )
 
 
@@ -429,130 +377,6 @@ def final_project_page():
         final_project=final_project
     )
 
-# @student_bp.route("/upload/<stage_id>", methods=["POST"])
-# @login_required
-# @role_required("student")
-# def upload_stage(stage_id):
-
-#     student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
-
-#     batch_id = student["batch_id"]
-
-#     deadline_doc = current_app.db.deadlines.find_one({
-#         "batch_id": batch_id,
-#         "stage_id": ObjectId(stage_id)
-#     })
-
-#     deadline = deadline_doc["deadline"] if deadline_doc else None
-
-#     now = datetime.utcnow()
-
-#     late = False
-#     if deadline and now > deadline:
-#         late = True
-
-#     file = request.files["file"]
-#     filename = secure_filename(file.filename)
-
-#     upload_folder = current_app.config["UPLOAD_FOLDER"]
-
-#     if not os.path.exists(upload_folder):
-#         os.makedirs(upload_folder)
-
-#     filepath = os.path.join(upload_folder, filename)
-
-#     # ✅ FIXED
-#     file.save(filepath)
-
-#     # ✅ Convert to PDF
-#     pdf_file = convert_to_pdf(filepath, upload_folder)
-
-#     if not pdf_file:
-#         flash("File conversion failed. Upload PDF or check system.")
-#         return redirect(url_for("student.dashboard"))
-
-#     # ✅ STORE pdf_file ALSO
-#     current_app.db.submissions.update_one(
-#         {
-#             "student_id": ObjectId(current_user.id),
-#             "stage_id": ObjectId(stage_id)
-#         },
-#         {
-#             "$set": {
-#                 "file_name": filename,
-#                 "pdf_file": pdf_file,   # 🔥 IMPORTANT
-#                 "submitted_at": now,
-#                 "status": "pending",
-#                 "late": late
-#             }
-#         },
-#         upsert=True
-#     )
-
-#     # ---------------- NOTIFICATION ----------------
-
-#     student_name = student["name"]
-
-#     stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
-#     stage_name = stage["name"]
-
-#     batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
-#     faculty_id = batch["mentor_id"]
-
-#     create_notification(
-#         faculty_id,
-#         f"{student_name} submitted {stage_name}"
-#     )
-
-#     # Late submission notification for admin
-#     if late:
-#         admin = current_app.db.users.find_one({"role": "admin"})
-
-#         if admin:
-#             create_notification(
-#                 admin["_id"],
-#                 f"{student_name} submitted {stage_name} late"
-#             )
- 
-#     if admin and admin.get("email"):
-#         send_email(
-#             admin["email"],
-#             "Late Submission Alert",
-#             late_submission_email(student_name, stage_name)
-#         )
-
-#     faculty = current_app.db.users.find_one({"_id": faculty_id})
-
-#     if faculty and faculty.get("email"):
-#         try:
-#             send_email(
-#                 faculty["email"],
-#                 "New Submission",
-#                 submission_email(student_name, stage_name)
-#             )
-#         except Exception as e:
-#             print("Email error:", e)
-#         except Exception as e:
-#             print("Email error:", e)
-
-# # Late submission email to admin
-#     if late:
-#         admin = current_app.db.users.find_one({"role": "admin"})
-
-#         if admin and admin.get("email"):
-#             try:
-#                 send_email(
-#                     admin["email"],
-#                     "Late Submission Alert",
-#                     late_submission_email(student_name, stage_name)
-#                 )
-#             except Exception as e:
-#                 print("Email error:", e)
-        
-#     flash("File uploaded successfully")
-
-#     return redirect(url_for("student.dashboard"))
-
 
 @student_bp.route("/upload/<stage_id>", methods=["POST"])
 @login_required
@@ -564,6 +388,7 @@ def upload_stage(stage_id):
     batch_id = student["batch_id"]
 
     # -------- DEADLINE CHECK --------
+
     batch = current_app.db.batches.find_one({"_id": batch_id})
     deadline_query = get_session_deadline_query(batch, ObjectId(stage_id))
     deadline_doc = current_app.db.deadlines.find_one(deadline_query) if deadline_query else None
@@ -582,6 +407,9 @@ def upload_stage(stage_id):
 
     # -------- FILE UPLOAD --------
     file = request.files["file"]
+    if not file or not file.filename:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
+
     original_name = secure_filename(file.filename)
     base_name, extension = os.path.splitext(original_name)
     filename = f"{base_name}-{student['_id']}-{int(now.timestamp())}{extension.lower()}"
@@ -644,7 +472,6 @@ def upload_stage(stage_id):
     stage_name = stage["name"]
 
     batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
-    # faculty_id = batch.get("mentor_id")
     faculty_id = batch.get("mentor_id")
 
     if faculty_id:
@@ -709,8 +536,16 @@ def upload_stage(stage_id):
             except Exception as e:
                 print("Email error:", e)
 
+    # Return JSON for AJAX
+    if request.headers.get('Accept') == 'application/json' or request.is_json:
+        return jsonify({
+            'success': True,
+            'pdf_file': pdf_file,
+            'filename': filename
+        })
+
     flash("File uploaded successfully")
-    return redirect(url_for("student.dashboard"))
+    return redirect(url_for("student.submissions"))
 
 
 @student_bp.route("/final-project-submission", methods=["POST"])

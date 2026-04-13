@@ -642,6 +642,45 @@ textarea:focus,
     transform: translateY(-1px);
 }
 
+.password-input-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.inline-form .password-input-wrap {
+    flex: 1 1 240px;
+}
+
+.password-input-wrap input {
+    padding-right: 52px !important;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    color: #446188;
+    background: rgba(219, 234, 254, 0.58);
+    cursor: pointer;
+    transform: translateY(-50%);
+}
+
+.password-toggle-btn:hover {
+    color: var(--primary-deep);
+    background: rgba(191, 219, 254, 0.9);
+}
+
+.password-toggle-btn i {
+    font-size: 0.95rem;
+}
+
 .inline-form select,
 .add-student-form select,
 .form-select-custom,
@@ -2669,6 +2708,31 @@ small {
 .empty-state-panel p {
     margin: 0;
     color: #60738f;
+}
+
+.stage-document-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.stage-document-upload {
+    min-width: 172px;
+}
+
+.stage-document-name {
+    max-width: 220px;
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stage-document-form .btn-sm-custom {
+    min-height: 38px;
 }
 
 @media (max-width: 767px) {

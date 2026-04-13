@@ -68,10 +68,25 @@
 
         <div class="deadline-list">
             {% for stage in stages %}
+            {% set stage_document = progress_document_dict.get(stage._id|string) %}
             <div class="deadline-list-item">
                 <div>
                     <strong>{{ stage.name }}</strong>
                     <p>Track this stage for your assigned batch.</p>
+                    {% if stage_document %}
+                    {% set preview_file = stage_document.get('pdf_file') %}
+                    {% if preview_file %}
+                    <button type="button"
+                            class="btn-view btn-sm-custom"
+                            onclick="openFileViewer('/admin/view-file/{{ preview_file }}', '/admin/download/{{ stage_document.file_name }}')">
+                        <i class="fas fa-eye"></i> View Document
+                    </button>
+                    {% else %}
+                    <span class="table-subcopy">Preview unavailable. Please ask the coordinator to reupload the document.</span>
+                    {% endif %}
+                    {% else %}
+                    <span class="table-subcopy">No shared document uploaded yet.</span>
+                    {% endif %}
                 </div>
                 <span class="deadline-pill">
                     {% if deadline_dict.get(stage._id|string) %}
@@ -120,5 +135,31 @@
 </div>
 
 </section>
+
+<div id="fileModal" class="file-modal" style="display:none;">
+    <div class="file-modal-content">
+        <span class="close-btn" onclick="closeViewer()">&times;</span>
+        <div id="fileContainer"></div>
+        <div class="file-footer">
+            <a id="downloadBtn" class="btn-download" target="_blank">Download</a>
+        </div>
+    </div>
+</div>
+
+<script>
+function openFileViewer(url, downloadUrl){
+    const modal = document.getElementById("fileModal");
+    const container = document.getElementById("fileContainer");
+    const downloadBtn = document.getElementById("downloadBtn");
+
+    downloadBtn.href = downloadUrl;
+    container.innerHTML = `<iframe src="${url}" width="100%" height="550px" style="border:none;"></iframe>`;
+    modal.style.display = "flex";
+}
+
+function closeViewer(){
+    document.getElementById("fileModal").style.display = "none";
+}
+</script>
 
 {% endblock %}

@@ -42,7 +42,12 @@
 
             <div class="mb-3">
                 <label>Password</label>
-                <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
+                <div class="password-input-wrap">
+                    <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
+                    <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility(this)" aria-label="Show password">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
             </div>
 
             <button class="btn btn-primary w-100">Sign In</button>
@@ -53,6 +58,27 @@
         </div>
     </div>
 </div>
+
+<script>
+function togglePasswordVisibility(button){
+    const wrapper = button.closest(".password-input-wrap");
+    const input = wrapper ? wrapper.querySelector("input") : null;
+    const icon = button.querySelector("i");
+
+    if(!input){
+        return;
+    }
+
+    const shouldShow = input.type === "password";
+    input.type = shouldShow ? "text" : "password";
+    button.setAttribute("aria-label", shouldShow ? "Hide password" : "Show password");
+
+    if(icon){
+        icon.classList.toggle("fa-eye", !shouldShow);
+        icon.classList.toggle("fa-eye-slash", shouldShow);
+    }
+}
+</script>
 
 </body>
 </html>

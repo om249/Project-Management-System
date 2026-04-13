@@ -2,6 +2,7 @@ import email
 from unittest import result
 import re
 import os
+import threading
 from functools import wraps
 
 from numpy import rint
@@ -16,7 +17,8 @@ from app import bcrypt
 from flask import send_from_directory
 from werkzeug.utils import secure_filename
 from app.services.notification_service import get_notifications, create_notification,  mark_notifications_read
-from app.services.email_service import send_email, student_welcome_email, faculty_welcome_email, submission_email, late_submission_email, status_email, mentor_assignment_email, student_mentor_assigned_email, final_project_status_email
+from app.services.email_service import send_email, student_welcome_email, faculty_welcome_email, submission_email, late_submission_email, status_email, mentor_assignment_email, student_mentor_assigned_email, final_project_status_email, progress_document_email
+from app.services.file_converter import convert_to_pdf
 from app.routes.student_routes import submissions
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -73,6 +75,125 @@ def save_profile_photo(file_storage, user_id):
     filename = f"profile-{user_id}-{int(datetime.utcnow().timestamp())}{extension}"
     file_storage.save(os.path.join(upload_folder, filename))
     return filename
+
+
+def save_progress_document(file_storage, session_id):
+    if not file_storage or not file_storage.filename:
+        return None
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_folder, exist_ok=True)
+
+    safe_name = secure_filename(file_storage.filename)
+    _, extension = os.path.splitext(safe_name)
+    extension = extension.lower()
+    allowed_extensions = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"}
+
+    if extension not in allowed_extensions:
+        return None
+
+    filename = f"progress-doc-{session_id}-{ObjectId()}{extension}"
+    file_path = os.path.join(upload_folder, filename)
+    file_storage.save(file_path)
+
+    pdf_file = filename if extension == ".pdf" else None
+    preview_status = "ready" if pdf_file else "processing"
+
+    return {
+        "file_name": filename,
+        "original_name": safe_name,
+        "pdf_file": pdf_file,
+        "preview_status": preview_status
+    }
+
+
+def notify_progress_document_recipients(session, stage, document_name, is_reupload=False):
+    action_label = "reuploaded" if is_reupload else "uploaded"
+    message = f"{stage['name']} reference document has been {action_label} for {session['name']}."
+
+    session_batches = list(current_app.db.batches.find(
+        {"session_id": session["_id"]},
+        {"_id": 1}
+    ))
+    batch_ids = [batch["_id"] for batch in session_batches]
+
+    students = list(current_app.db.students.find({
+        "$or": [
+            {"session_id": session["_id"]},
+            {"batch_id": {"$in": batch_ids}}
+        ]
+    }))
+    faculty_members = list(current_app.db.users.find({
+        "role": {"$in": ["faculty", "admin"]}
+    }))
+
+    for student in students:
+        create_notification(student["_id"], message, "document")
+        if student.get("email"):
+            try:
+                send_email(
+                    student["email"],
+                    f"Progress Report Document {action_label.title()}",
+                    progress_document_email(
+                        student.get("name", "Student"),
+                        stage["name"],
+                        session["name"],
+                        document_name,
+                        action_label
+                    )
+                )
+            except Exception as e:
+                print("Progress document student email error:", e)
+
+    for faculty in faculty_members:
+        create_notification(faculty["_id"], message, "document")
+        if faculty.get("email"):
+            try:
+                send_email(
+                    faculty["email"],
+                    f"Progress Report Document {action_label.title()}",
+                    progress_document_email(
+                        faculty.get("name", "Faculty"),
+                        stage["name"],
+                        session["name"],
+                        document_name,
+                        action_label
+                    )
+                )
+            except Exception as e:
+                print("Progress document faculty email error:", e)
+
+
+def ensure_progress_document_preview(document):
+    return document
+
+
+def process_progress_document_background(app, document_id, session_id, stage_id, document_name, is_reupload=False):
+    with app.app_context():
+        document = current_app.db.progress_documents.find_one({"_id": ObjectId(document_id)})
+        session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
+        stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
+
+        if not document or not session or not stage:
+            return
+
+        if not document.get("pdf_file"):
+            upload_folder = current_app.config["UPLOAD_FOLDER"]
+            file_path = os.path.join(upload_folder, document["file_name"])
+            pdf_file = convert_to_pdf(file_path, upload_folder) if os.path.exists(file_path) else None
+
+            if pdf_file:
+                current_app.db.progress_documents.update_one(
+                    {"_id": document["_id"]},
+                    {"$set": {"pdf_file": pdf_file, "preview_status": "ready"}}
+                )
+            else:
+                current_app.db.progress_documents.update_one(
+                    {"_id": document["_id"]},
+                    {"$set": {"preview_status": "failed"}}
+                )
+
+        notify_progress_document_recipients(session, stage, document_name, is_reupload=is_reupload)
 
 
 def get_session_deadline_query(session_id, stage_id=None):
@@ -714,13 +835,145 @@ def manage_stages():
     for d in deadlines:
         deadline_dict[str(d["stage_id"])] = d["deadline"].strftime("%Y-%m-%d")
 
+    progress_documents = current_app.db.progress_documents.find({
+        "session_id": selected_session["_id"]
+    })
+    progress_document_dict = {
+        str(document.get("stage_id")): ensure_progress_document_preview(document)
+        for document in progress_documents
+    }
+
     return render_template(
         "admin/stages.html",
         stages=stages,
         sessions=sessions,
         selected_session=selected_session,
-        deadline_dict=deadline_dict
+        deadline_dict=deadline_dict,
+        progress_document_dict=progress_document_dict
     )
+
+
+@admin_bp.route("/progress-documents/upload", methods=["POST"])
+@login_required
+@role_required("admin")
+def upload_progress_document():
+
+    session_id = request.form.get("session_id")
+    stage_id = request.form.get("stage_id")
+    document = request.files.get("document")
+
+    if not session_id or not stage_id:
+        flash("Select a valid progress report before uploading a document.", "warning")
+        return redirect(url_for("admin.manage_stages"))
+
+    session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
+    if not session:
+        flash("Selected academic session was not found.", "warning")
+        return redirect(url_for("admin.manage_stages"))
+
+    stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
+    if not stage:
+        flash("Selected progress report was not found.", "warning")
+        return redirect(url_for("admin.manage_stages", session=session_id))
+
+    saved_document = save_progress_document(document, session_id)
+    if not saved_document:
+        flash("Upload a valid previewable document: PDF, DOC, DOCX, PPT, PPTX, XLS, or XLSX.", "warning")
+        return redirect(url_for("admin.manage_stages", session=session_id))
+
+    existing_document = current_app.db.progress_documents.find_one({
+        "session_id": session["_id"],
+        "stage_id": stage["_id"]
+    })
+
+    if existing_document and existing_document.get("file_name"):
+        files_to_remove = {
+            existing_document.get("file_name"),
+            existing_document.get("pdf_file")
+        }
+        for old_file in files_to_remove:
+            if not old_file:
+                continue
+
+            old_file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], old_file)
+            if os.path.exists(old_file_path):
+                try:
+                    os.remove(old_file_path)
+                except OSError:
+                    pass
+
+    document_payload = {
+        "session_id": session["_id"],
+        "session_name": session["name"],
+        "stage_id": stage["_id"],
+        "stage_name": stage["name"],
+        "file_name": saved_document["file_name"],
+        "pdf_file": saved_document["pdf_file"],
+        "preview_status": saved_document["preview_status"],
+        "original_name": saved_document["original_name"],
+        "uploaded_by": ObjectId(current_user.id),
+        "updated_at": datetime.utcnow()
+    }
+
+    app = current_app._get_current_object()
+
+    if existing_document:
+        current_app.db.progress_documents.update_one(
+            {"_id": existing_document["_id"]},
+            {"$set": document_payload}
+        )
+        document_id = existing_document["_id"]
+        is_reupload = True
+        flash("Reference document reuploaded. Preview and notifications are processing in the background.", "success")
+    else:
+        document_payload["created_at"] = datetime.utcnow()
+        result = current_app.db.progress_documents.insert_one(document_payload)
+        document_id = result.inserted_id
+        is_reupload = False
+        flash("Reference document uploaded. Preview and notifications are processing in the background.", "success")
+
+    threading.Thread(
+        target=process_progress_document_background,
+        args=(app, str(document_id), session_id, stage_id, saved_document["original_name"], is_reupload),
+        daemon=True
+    ).start()
+
+    return redirect(url_for("admin.manage_stages", session=session_id))
+
+
+@admin_bp.route("/progress-documents/<document_id>/delete", methods=["POST"])
+@login_required
+@role_required("admin")
+def delete_progress_document(document_id):
+
+    document = current_app.db.progress_documents.find_one({"_id": ObjectId(document_id)})
+    if not document:
+        flash("Document not found.", "warning")
+        return redirect(url_for("admin.manage_stages"))
+
+    session_id = str(document.get("session_id")) if document.get("session_id") else None
+
+    files_to_remove = {
+        document.get("file_name"),
+        document.get("pdf_file")
+    }
+    for filename in files_to_remove:
+        if not filename:
+            continue
+
+        file_path = os.path.join(current_app.config["UPLOAD_FOLDER"], filename)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+
+    current_app.db.progress_documents.delete_one({"_id": document["_id"]})
+
+    flash("Reference document deleted successfully.", "success")
+    if session_id:
+        return redirect(url_for("admin.manage_stages", session=session_id))
+    return redirect(url_for("admin.manage_stages"))
 
 
 # ===================== SAVE SINGLE DEADLINE =====================
@@ -1080,6 +1333,15 @@ def faculty_dashboard():
     for d in deadlines:
         deadline_dict[str(d["stage_id"])] = d["deadline"]
 
+    progress_document_dict = {}
+    if batch and batch.get("session_id"):
+        progress_documents = current_app.db.progress_documents.find({
+            "session_id": batch["session_id"]
+        })
+        progress_document_dict = {
+            str(document.get("stage_id")): ensure_progress_document_preview(document)
+            for document in progress_documents
+        }
 
     total_students = len(students)
 
@@ -1118,6 +1380,7 @@ def faculty_dashboard():
         stages=stages,
         submission_dict=submission_dict,
         deadline_dict=deadline_dict,
+        progress_document_dict=progress_document_dict,
         total_students=total_students,
         pending_reviews=pending_reviews,
         approved_count=approved_count,

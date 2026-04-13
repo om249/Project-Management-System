@@ -250,3 +250,21 @@ def final_project_status_email(project_title, status, remark=""):
         {remark_html}
         """
     )
+
+
+def progress_document_email(name, stage_name, session_name, document_name, action_label):
+    return email_shell(
+        "ZIBACAR Progress Report Resource",
+        f"Progress Report document {action_label}",
+        f"Hello <b>{name}</b>, a shared document for <b>{stage_name}</b> has been {action_label}.",
+        f"""
+        <div style="padding:18px;border-radius:16px;background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;">
+            <p style="margin:0 0 8px;"><b>Academic Session:</b> {session_name}</p>
+            <p style="margin:0 0 8px;"><b>Progress Report:</b> {stage_name}</p>
+            <p style="margin:0;"><b>Document:</b> {document_name}</p>
+        </div>
+        <p style="margin:24px 0 0;">
+            Please log in to the portal and open the Progress Report section to view the latest reference file.
+        </p>
+        """
+    )

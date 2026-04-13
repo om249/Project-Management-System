@@ -8,14 +8,16 @@
     <div class="session-toolbar">
         <div>
             <h4>Academic Sessions</h4>
-            <p class="section-subtitle">Choose the session before setting one shared deadline plan for all batches in that academic session.</p>
+            <p class="section-subtitle">Choose the session before setting one shared deadline plan for all batches in
+                that academic session.</p>
         </div>
 
         <div class="session-toolbar-actions">
             <form method="GET" action="{{ url_for('admin.manage_stages') }}" class="session-filter-form">
                 <select name="session" onchange="this.form.submit()">
                     {% for session in sessions %}
-                    <option value="{{ session._id }}" {% if selected_session and session._id == selected_session._id %}selected{% endif %}>
+                    <option value="{{ session._id }}" {% if selected_session and session._id==selected_session._id
+                        %}selected{% endif %}>
                         {{ session.name }}{% if session.is_active %} • Current{% endif %}
                     </option>
                     {% endfor %}
@@ -29,10 +31,7 @@
 <div class="card">
     <form method="POST" class="inline-form">
         <input type="hidden" name="session" value="{{ selected_session._id }}">
-        <input type="text"
-               name="name"
-               placeholder="Enter Progress Report name"
-               required>
+        <input type="text" name="name" placeholder="Enter Progress Report name" required>
 
         <button type="submit" class="btn-success">
             Add Progress Report
@@ -43,78 +42,223 @@
 <!-- Stage Table -->
 <div class="card">
     <h4>Drag & Drop to Reorder</h4>
-    <p class="section-subtitle">The deadlines below apply to every batch inside <strong>{{ selected_session.name }}</strong>.</p>
+    <p class="section-subtitle">The documents and deadlines below apply to every batch inside <strong>{{
+            selected_session.name }}</strong>.</p>
 
     <table class="custom-table">
         <thead>
             <tr>
                 <th>Progress Report</th>
-                <th>Deadline</th>
+                <th>Document</th>
+                <th>Submission Deadline</th>
                 <th width="120">Action</th>
             </tr>
         </thead>
         <tbody id="stageList">
 
-        {% for stage in stages %}
-        <tr data-id="{{ stage._id }}">
-            <td>{{ stage.name }}</td>
+            {% for stage in stages %}
+            <tr data-id="{{ stage._id }}" data-stage-id="{{ stage._id }}">
+                <td>{{ stage.name }}</td>
+                {% set stage_document = progress_document_dict.get(stage._id|string) %}
 
-            <td>
-                <form method="POST"
-                      action="{{ url_for('admin.save_single_deadline') }}"
-                      class="deadline-form">
+                <td>
+                    <form method="POST" action="{{ url_for('admin.upload_progress_document') }}"
+                        enctype="multipart/form-data" class="stage-document-form" data-stage-id="{{ stage._id }}">
+                        <input type="hidden" name="session_id" value="{{ selected_session._id }}">
+                        <input type="hidden" name="stage_id" value="{{ stage._id }}">
+                        
+                        <div class="document-upload-area">
+                            <label class="file-upload submission-file-upload stage-document-upload">
+                                <input type="file" name="document" class="submission-file-input"
+                                    data-label-id="progressDocumentFileLabel{{ stage._id }}"
+                                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" required>
+                                <span id="progressDocumentFileLabel{{ stage._id }}" class="submission-file-trigger">
+                                    {{ "Update Document" if stage_document else "Choose Document" }}
+                                </span>
+                            </label>
 
-                    <input type="hidden"
-                           name="stage_id"
-                           value="{{ stage._id }}">
+                            <button type="submit" class="btn-success btn-sm-custom upload-doc-btn">
+                                {{ "Reupload" if stage_document else "Upload" }}
+                            </button>
+                        </div>
 
-                    <input type="hidden"
-                           name="session_id"
-                           value="{{ selected_session._id }}">
+                        {% if stage_document %}
+                        <div class="document-preview">
+                            {% set preview_file = stage_document.get('pdf_file') %}
+                            {% if preview_file %}
+                            <button type="button" class="btn-view btn-sm-custom view-doc-btn"
+                                onclick="openFileViewer('/admin/view-file/{{ preview_file }}', '/admin/download/{{ stage_document.file_name }}')">
+                                <i class="fas fa-eye"></i> View
+                            </button>
+                            {% elif stage_document.get('preview_status') == 'failed' %}
+                            <span class="table-subcopy text-danger">Preview failed. Reupload.</span>
+                            {% else %}
+                            <span class="table-subcopy text-info">Preview preparing...</span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </form>
+                </td>
 
-                    <input type="date"
-                           name="deadline"
-                           value="{{ deadline_dict.get(stage._id|string) }}"
-                           onchange="this.form.submit()">
-                </form>
-            </td>
+                <td>
+                    <form method="POST" action="{{ url_for('admin.save_single_deadline') }}" class="deadline-form">
 
-            <td>
-                <a href="{{ url_for('admin.delete_stage', stage_id=stage._id) }}"
-                   class="btn-danger-custom btn-sm-custom">
-                   Delete
-                </a>
-            </td>
-        </tr>
-        {% endfor %}
+                        <input type="hidden" name="stage_id" value="{{ stage._id }}">
+
+                        <input type="hidden" name="session_id" value="{{ selected_session._id }}">
+
+                        <input type="date" name="deadline" value="{{ deadline_dict.get(stage._id|string) }}"
+                            onchange="this.form.submit()">
+                    </form>
+                </td>
+
+                <td>
+                    <a href="{{ url_for('admin.delete_stage', stage_id=stage._id) }}"
+                        class="btn-danger-custom btn-sm-custom">
+                        Delete
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
 
         </tbody>
     </table>
 </div>
 
+<div id="fileModal" class="file-modal" style="display:none;">
+    <div class="file-modal-content">
+        <span class="close-btn" onclick="closeViewer()">&times;</span>
+        <div id="fileContainer"></div>
+        <div class="file-footer">
+            <a id="downloadBtn" class="btn-download" target="_blank">Download</a>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
 <script>
-new Sortable(document.getElementById("stageList"), {
-    animation: 150,
-    onEnd: function () {
+document.addEventListener("DOMContentLoaded", function () {
+    // File label update
+    document.querySelectorAll(".submission-file-input").forEach(function (input) {
+        input.addEventListener("change", function () {
+            const label = document.getElementById(this.dataset.labelId);
+            if (!label) {
+                return;
+            }
 
-        let order = [];
-
-        document.querySelectorAll("#stageList tr").forEach((row, index) => {
-            order.push({
-                id: row.dataset.id,
-                order: index + 1
-            });
+            if (this.files && this.files.length > 0) {
+                label.textContent = this.files[0].name;
+            } else {
+                label.textContent = "Choose Document";
+            }
         });
+    });
 
-        fetch("{{ url_for('admin.update_stage_order') }}", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(order)
-        }).then(() => location.reload());
-    }
+    // AJAX Upload for progress documents
+    document.querySelectorAll('.stage-document-form').forEach(function(form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const row = this.closest('tr');
+            const stageId = this.dataset.stageId || row.dataset.stageId;
+            const uploadBtn = this.querySelector('.upload-doc-btn');
+            const previewDiv = row.querySelector('.document-preview') || document.createElement('div');
+            previewDiv.className = 'document-preview';
+
+            // Loading
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+            previewDiv.innerHTML = '<span class="table-subcopy text-info">Uploading...</span>';
+            if (!row.querySelector('.document-preview')) {
+                row.querySelector('td:nth-child(2)').appendChild(previewDiv);
+            }
+
+            const formData = new FormData(this);
+
+            try {
+                const response = await fetch(this.action, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+
+                if (data.success) {
+                    uploadBtn.innerHTML = 'Reupload';
+                    uploadBtn.classList.remove('btn-success');
+                    uploadBtn.classList.add('btn-primary');
+                    
+                    if (data.pdf_file) {
+                        previewDiv.innerHTML = `<button type="button" class="btn-view btn-sm-custom view-doc-btn"
+                            onclick="openFileViewer('/admin/view-file/${data.pdf_file}', '/admin/download/${data.filename}')">
+                            <i class="fas fa-eye"></i> View
+                        </button>`;
+                    } else {
+                        previewDiv.innerHTML = '<span class="table-subcopy text-info">Preview processing...</span>';
+                    }
+
+                    showToast('Upload successful! Preview processing...', 'success');
+                } else {
+                    previewDiv.innerHTML = '';
+                    showToast(data.error || 'Upload failed', 'danger');
+                }
+            } catch (error) {
+                previewDiv.innerHTML = '';
+                showToast('Network error. Try again.', 'danger');
+                console.error('Upload error:', error);
+            } finally {
+                uploadBtn.disabled = false;
+            }
+        });
+    });
+
+    // Sortable
+    new Sortable(document.getElementById("stageList"), {
+        animation: 150,
+        onEnd: function () {
+            let order = [];
+            document.querySelectorAll("#stageList tr").forEach((row, index) => {
+                order.push({
+                    id: row.dataset.id,
+                    order: index + 1
+                });
+            });
+
+            fetch("{{ url_for('admin.update_stage_order') }}", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(order)
+            }).then(() => location.reload());
+        }
+    });
 });
+
+function openFileViewer(url, downloadUrl) {
+    const modal = document.getElementById("fileModal");
+    const container = document.getElementById("fileContainer");
+    const downloadBtn = document.getElementById("downloadBtn");
+
+    downloadBtn.href = downloadUrl;
+    container.innerHTML = `<iframe src="${url}" width="100%" height="550px" style="border:none;"></iframe>`;
+    modal.style.display = "flex";
+}
+
+function closeViewer() {
+    document.getElementById("fileModal").style.display = "none";
+}
+
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;padding:12px 20px;border-radius:5px;color:white;max-width:300px;';
+    if (type === 'success') toast.style.background = '#28a745';
+    else if (type === 'danger') toast.style.background = '#dc3545';
+    else if (type === 'info') toast.style.background = '#17a2b8';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+}
 </script>
 
 {% endblock %}

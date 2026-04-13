@@ -280,6 +280,25 @@ Sign Out
 
 <script>
 
+function togglePasswordVisibility(button){
+const wrapper = button.closest(".password-input-wrap");
+const input = wrapper ? wrapper.querySelector("input") : null;
+const icon = button.querySelector("i");
+
+if(!input){
+return;
+}
+
+const shouldShow = input.type === "password";
+input.type = shouldShow ? "text" : "password";
+button.setAttribute("aria-label", shouldShow ? "Hide password" : "Show password");
+
+if(icon){
+icon.classList.toggle("fa-eye", !shouldShow);
+icon.classList.toggle("fa-eye-slash", shouldShow);
+}
+}
+
 function toggleNotifications(){
 
 const dropdown = document.getElementById("notificationDropdown");
