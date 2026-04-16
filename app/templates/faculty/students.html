@@ -6,12 +6,18 @@
 
 <div class="card-modern">
 
-<table class="student-table">
+<div class="table-scroll-wrap">
+<table class="student-table faculty-students-table">
 
 <thead>
 <tr>
 <th>Name</th>
 <th>PRN</th>
+<th>Roll No.</th>
+<th>Class</th>
+<th>Division</th>
+<th>Student Mobile</th>
+<th>Parent Mobile</th>
 <th>Year</th>
 <th>Progress</th>
 </tr>
@@ -31,6 +37,16 @@
 
 <td>{{ s.prn }}</td>
 
+<td>{{ s.get('roll_no') or "-" }}</td>
+
+<td>{{ s.get('class') or "-" }}</td>
+
+<td>{{ s.get('division') or "-" }}</td>
+
+<td>{{ s.get('student_mobile') or "-" }}</td>
+
+<td>{{ s.get('parent_mobile') or "-" }}</td>
+
 <td>{{ s.year }}</td>
 
 <td class="progress-cell">
@@ -45,6 +61,7 @@
 </tbody>
 
 </table>
+</div>
 
 </div>
 

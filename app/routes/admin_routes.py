@@ -1469,6 +1469,11 @@ def add_student():
     name = request.form["name"]
     prn = request.form["prn"]
     email = request.form["email"].strip().replace(" ", "")
+    student_mobile = request.form.get("student_mobile", "").strip()
+    parent_mobile = request.form.get("parent_mobile", "").strip()
+    class_name = request.form.get("student_class", "").strip()
+    division = request.form.get("division", "").strip()
+    roll_no = request.form.get("roll_no", "").strip()
     batch_id = request.form["batch_id"]
     session_id = request.form["session_id"]
     session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
@@ -1521,6 +1526,11 @@ def add_student():
         "name": name,
         "prn": prn,
         "email": email,
+        "student_mobile": student_mobile,
+        "parent_mobile": parent_mobile,
+        "class": class_name,
+        "division": division,
+        "roll_no": roll_no,
         "year": session["name"],
         "session_id": session["_id"],
         "batch_id": batch["_id"],
@@ -1632,7 +1642,12 @@ def upload_students():
     column_aliases = {
         "prn": ["prn", "rollno", "rollnumber", "studentid"],
         "name": ["name", "studentname", "fullname"],
-        "email": ["email", "emailid", "emailaddress", "mail"]
+        "email": ["email", "emailid", "emailaddress", "mail"],
+        "student_mobile": ["studentmobile", "studentmobileno", "studentphone", "studentcontact", "mobileno", "mobile"],
+        "parent_mobile": ["parentmobile", "parentmobileno", "parentphone", "parentcontact", "guardianmobile", "guardianphone", "parentno"],
+        "class": ["class", "classname", "studentclass"],
+        "division": ["division", "div", "section", "classdivision"],
+        "roll_no": ["rollno", "rollnumber", "roll", "classrollno"]
     }
 
     header_row_index = None
@@ -1681,6 +1696,32 @@ def upload_students():
         email = ""
         if resolved_columns["email"]:
             email = str(row.get(resolved_columns["email"], "")).strip()
+        student_mobile = ""
+        if resolved_columns["student_mobile"]:
+            student_mobile = str(row.get(resolved_columns["student_mobile"], "")).strip()
+        parent_mobile = ""
+        if resolved_columns["parent_mobile"]:
+            parent_mobile = str(row.get(resolved_columns["parent_mobile"], "")).strip()
+        class_name = ""
+        if resolved_columns["class"]:
+            class_name = str(row.get(resolved_columns["class"], "")).strip()
+        division = ""
+        if resolved_columns["division"]:
+            division = str(row.get(resolved_columns["division"], "")).strip()
+        roll_no = ""
+        if resolved_columns["roll_no"]:
+            roll_no = str(row.get(resolved_columns["roll_no"], "")).strip()
+
+        if student_mobile.lower() == "nan":
+            student_mobile = ""
+        if parent_mobile.lower() == "nan":
+            parent_mobile = ""
+        if class_name.lower() == "nan":
+            class_name = ""
+        if division.lower() == "nan":
+            division = ""
+        if roll_no.lower() == "nan":
+            roll_no = ""
         year = session["name"]
 
         print("PROCESSING:", prn, name)
@@ -1715,6 +1756,11 @@ def upload_students():
             "prn": prn,
             "name": name,
             "email": email,
+            "student_mobile": student_mobile,
+            "parent_mobile": parent_mobile,
+            "class": class_name,
+            "division": division,
+            "roll_no": roll_no,
             "year": year,
             "session_id": session["_id"],
             "batch_id": None,
@@ -1754,7 +1800,12 @@ def download_template():
     df = pd.DataFrame({
         "PRN": [],
         "Name": [],
-        "Email": []
+        "Email": [],
+        "Student Mobile": [],
+        "Parent Mobile": [],
+        "Class": [],
+        "Division": [],
+        "Roll No": []
     })
 
     path = "student_template.xlsx"
@@ -1981,13 +2032,15 @@ def update_faculty_profile():
 
     name = request.form.get("name")
     email = request.form.get("email")
+    mobile = request.form.get("mobile", "").strip()
     file = request.files.get("photo")
     new_password = request.form.get("new_password", "").strip()
     confirm_password = request.form.get("confirm_password", "").strip()
 
     update_data = {
         "name": name,
-        "email": email
+        "email": email,
+        "mobile": mobile
     }
 
     if file and file.filename:

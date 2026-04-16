@@ -38,8 +38,13 @@
 <tr>
 <th>Select</th>
 <th>PRN</th>
+<th>Roll No.</th>
 <th>Name</th>
 <th>Email</th>
+<th>Class</th>
+<th>Division</th>
+<th>Student Mobile</th>
+<th>Parent Mobile</th>
 </tr>
 </thead>
 
@@ -57,8 +62,13 @@
 </td>
 
 <td>{{ s.prn }}</td>
+<td>{{ s.get('roll_no') or "-" }}</td>
 <td>{{ s.name }}</td>
 <td>{{ s.email }}</td>
+<td>{{ s.get('class') or "-" }}</td>
+<td>{{ s.get('division') or "-" }}</td>
+<td>{{ s.get('student_mobile') or "-" }}</td>
+<td>{{ s.get('parent_mobile') or "-" }}</td>
 
 </tr>
 

@@ -278,6 +278,16 @@ Sign Out
 
 {% endif %}
 
+<div id="pageLoader" class="page-loader" aria-hidden="true">
+    <div class="page-loader-card" role="status" aria-live="polite" aria-label="Loading">
+        <div class="page-loader-spinner"></div>
+        <div class="page-loader-copy">
+            <strong>Loading</strong>
+            <span>Please wait...</span>
+        </div>
+    </div>
+</div>
+
 <script>
 
 function togglePasswordVisibility(button){
@@ -356,6 +366,70 @@ dropdown.classList.remove("is-open");
 
 </script>
 
+<script>
+function showPageLoader(){
+    const loader = document.getElementById("pageLoader");
+    if(!loader){
+        return;
+    }
+    loader.classList.add("is-visible");
+    loader.setAttribute("aria-hidden", "false");
+}
+
+function hidePageLoader(){
+    const loader = document.getElementById("pageLoader");
+    if(!loader){
+        return;
+    }
+    loader.classList.remove("is-visible");
+    loader.setAttribute("aria-hidden", "true");
+}
+
+// Hide loader on load and BFCache restore.
+window.addEventListener("pageshow", function(){
+    hidePageLoader();
+});
+
+document.addEventListener("DOMContentLoaded", function(){
+    hidePageLoader();
+
+    // Show loader on any form submit (uploads, updates, etc.)
+    document.querySelectorAll("form").forEach(function(form){
+        form.addEventListener("submit", function(){
+            showPageLoader();
+        });
+    });
+
+    // Show loader on in-app navigation links (but not for new tabs/downloads/hash).
+    document.addEventListener("click", function(event){
+        const link = event.target.closest("a");
+        if(!link){
+            return;
+        }
+
+        const href = (link.getAttribute("href") || "").trim();
+        const normalizedHref = href.toLowerCase();
+        if(!href || href.startsWith("#")){
+            return;
+        }
+        if(
+            normalizedHref.startsWith("mailto:") ||
+            normalizedHref.startsWith("tel:") ||
+            normalizedHref.startsWith("javascript:")
+        ){
+            return;
+        }
+        if(link.getAttribute("target") === "_blank"){
+            return;
+        }
+        if(link.hasAttribute("download")){
+            return;
+        }
+
+        showPageLoader();
+    });
+});
+</script>
 
 <!-- <script>
 function openFileViewer(url){

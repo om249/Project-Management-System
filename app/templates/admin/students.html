@@ -68,6 +68,16 @@
 
     <input type="email" name="email" placeholder="Email" required>
 
+    <input type="tel" name="student_mobile" placeholder="Student Mobile No." required>
+
+    <input type="tel" name="parent_mobile" placeholder="Parent Mobile No." required>
+
+    <input type="text" name="student_class" placeholder="Class" required>
+
+    <input type="text" name="division" placeholder="Division" required>
+
+    <input type="text" name="roll_no" placeholder="Roll No." required>
+
     <select name="batch_id" required>
         <option value="">Select Batch</option>
         {% for batch in batches %}
@@ -85,6 +95,7 @@
 <div class="card">
 
 <h4>Bulk Upload</h4>
+<p class="section-subtitle">Include columns like PRN, Name, Email, Student Mobile, Parent Mobile, Class, Division, and Roll No. (column order can vary).</p>
 
 <form method="POST"
       action="{{ url_for('admin.upload_students') }}"
@@ -128,6 +139,11 @@ Upload Students
 <th>PRN</th>
 <th>Name</th>
 <th>Email</th>
+<th>Student Mobile</th>
+<th>Parent Mobile</th>
+<th>Class</th>
+<th>Division</th>
+<th>Roll No.</th>
 <th>Session</th>
 <th>Batch</th>
 </tr>
@@ -141,6 +157,11 @@ Upload Students
 <td>{{ s.prn }}</td>
 <td>{{ s.name }}</td>
 <td>{{ s.email }}</td>
+<td>{{ s.get('student_mobile') or "-" }}</td>
+<td>{{ s.get('parent_mobile') or "-" }}</td>
+<td>{{ s.get('class') or "-" }}</td>
+<td>{{ s.get('division') or "-" }}</td>
+<td>{{ s.get('roll_no') or "-" }}</td>
 <td>{{ s.year }}</td>
 <td>{{ s.batch_name }}</td>
 

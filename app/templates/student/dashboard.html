@@ -91,10 +91,50 @@
         <div class="student-stat-icon bg-teal">
             <i class="fas fa-user-tie"></i>
         </div>
-        <div>
+        <div class="mentor-support-card" id="mentorSupportCard">
             <span>Mentor Support</span>
             <strong>{{ mentor.name if mentor else "Pending Assignment" }}</strong>
-            <p>{{ mentor.email if mentor and mentor.email else "Your mentor details will appear here once assigned." }}</p>
+            {% set mentor_phone = mentor.get('mobile') if mentor and mentor.get('mobile') else (mentor.get('phone') if mentor and mentor.get('phone') else "") %}
+            {% set mentor_email = mentor.get('email') if mentor and mentor.get('email') else "" %}
+            <p class="mentor-support-hint">Reach out to your mentor for guidance on submissions and project direction.</p>
+            <div class="mentor-contact-actions" id="mentorContactActions">
+                {% if mentor_phone %}
+                <a href="tel:{{ mentor_phone }}" class="mentor-action-btn" title="Call {{ mentor_phone }}">
+                    <i class="fas fa-phone"></i>
+                    <span>Call</span>
+                </a>
+                <button type="button" class="mentor-action-btn ghost" data-copy-text="{{ mentor_phone }}" data-copy-label="Number">
+                    <i class="fas fa-copy"></i>
+                    <span>Copy Number</span>
+                </button>
+                {% else %}
+                <span class="mentor-action-btn disabled">
+                    <i class="fas fa-phone"></i>
+                    <span>Phone not available</span>
+                </span>
+                {% endif %}
+
+                {% if mentor_email %}
+                <a href="https://mail.google.com/mail/?view=cm&fs=1&to={{ mentor_email }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="mentor-action-btn"
+                   title="Email {{ mentor_email }}">
+                    <i class="fas fa-envelope"></i>
+                    <span>Email</span>
+                </a>
+                <button type="button" class="mentor-action-btn ghost" data-copy-text="{{ mentor_email }}" data-copy-label="Email">
+                    <i class="fas fa-copy"></i>
+                    <span>Copy Email</span>
+                </button>
+                {% else %}
+                <span class="mentor-action-btn disabled">
+                    <i class="fas fa-envelope"></i>
+                    <span>Email not available</span>
+                </span>
+                {% endif %}
+            </div>
+            <small class="mentor-action-feedback" id="mentorActionFeedback"></small>
         </div>
     </div>
 
@@ -172,5 +212,62 @@
 </div>
 
 </section>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    const supportCard = document.getElementById("mentorSupportCard");
+    const feedback = document.getElementById("mentorActionFeedback");
+    if(!supportCard){
+        return;
+    }
+
+    supportCard.addEventListener("click", function(){
+        supportCard.classList.toggle("is-open");
+    });
+
+    supportCard.querySelectorAll("[data-copy-text]").forEach(function(button){
+        button.addEventListener("click", function(event){
+            event.stopPropagation();
+            const value = button.dataset.copyText || "";
+            const label = button.dataset.copyLabel || "Value";
+            if(!value){
+                return;
+            }
+
+            const onSuccess = function(){
+                if(feedback){
+                    feedback.textContent = label + " copied to clipboard.";
+                }
+            };
+
+            const onFailure = function(){
+                if(feedback){
+                    feedback.textContent = "Unable to copy " + label.toLowerCase() + ". Please copy manually.";
+                }
+            };
+
+            if(navigator.clipboard && navigator.clipboard.writeText){
+                navigator.clipboard.writeText(value).then(onSuccess).catch(onFailure);
+                return;
+            }
+
+            try{
+                const textArea = document.createElement("textarea");
+                textArea.value = value;
+                textArea.style.position = "fixed";
+                textArea.style.opacity = "0";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand("copy");
+                document.body.removeChild(textArea);
+                onSuccess();
+            }catch(error){
+                onFailure();
+            }
+        });
+    });
+});
+</script>
 
 {% endblock %}
