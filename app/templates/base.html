@@ -8,7 +8,8 @@
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style1.css') }}">
+<!-- <link rel="stylesheet" href="{{ url_for('static', filename='css/style1.css') }}"> -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style2.css') }}">
 
 <link rel="stylesheet"
 href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -75,6 +76,12 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 </a>
 </li>
 {% endif %}
+
+<li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint in ['admin.evaluation_sheet', 'student.evaluation_sheet'] %}active-link{% endif %}" href="{% if current_user.role == 'student' %}{{ url_for('student.evaluation_sheet') }}{% else %}{{ url_for('admin.evaluation_sheet') }}{% endif %}">
+<i class="fa fa-table-list sidebar-icon"></i> Evaluation Sheet
+</a>
+</li>
 {% if can_view_reports %}
 <li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='admin.admin_final_projects' %}active-link{% endif %}" href="{{ url_for('admin.admin_final_projects') }}">
@@ -138,6 +145,12 @@ href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
 <li class="nav-item">
 <a class="nav-link text-white {% if request.endpoint=='student.final_project_page' %}active-link{% endif %}" href="{{ url_for('student.final_project_page') }}">
 <i class="fa fa-folder-tree sidebar-icon"></i> Final Project
+</a>
+</li>
+
+<li class="nav-item">
+<a class="nav-link text-white {% if request.endpoint=='student.evaluation_sheet' %}active-link{% endif %}" href="{{ url_for('student.evaluation_sheet') }}">
+<i class="fa fa-table-list sidebar-icon"></i> Evaluation
 </a>
 </li>
 
@@ -398,6 +411,16 @@ document.addEventListener("DOMContentLoaded", function(){
             return;
         }
         if(link.hasAttribute("download")){
+            return;
+        }
+        if(link.classList.contains("no-page-loader")){
+            return;
+        }
+        if(
+            href.includes("/download/") ||
+            href.includes("/export") ||
+            href.includes("download")
+        ){
             return;
         }
 

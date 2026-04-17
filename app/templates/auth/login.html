@@ -28,23 +28,23 @@
         {% endwith %}
 
         <form method="POST">
-            <input type="hidden" name="login_role" id="loginRoleInput" value="{{ selected_role or 'admin' }}">
+            <input type="hidden" name="login_role" id="loginRoleInput" value="{{ selected_role or 'leadership' }}">
 
             <div class="login-role-grid">
                 <button type="button"
-                        class="login-role-card {% if (selected_role or 'admin') == 'admin' %}active{% endif %}"
-                        data-role="admin"
-                        data-label="Coordinator Email"
-                        data-placeholder="Enter project coordinator email"
-                        data-helper="Project coordinator signs in with official email."
+                        class="login-role-card {% if (selected_role or 'leadership') == 'leadership' %}active{% endif %}"
+                        data-role="leadership"
+                        data-label="Leadership Email"
+                        data-placeholder="Enter director / PC / AC / HOD email"
+                        data-helper="Director, Project Coordinator, Academic Coordinator, and HOD sign in here."
                         onclick="setLoginRole(this)">
                     <span class="login-role-icon"><i class="fas fa-user-shield"></i></span>
-                    <strong>Project Coordinator</strong>
+                    <strong>Leadership</strong>
                     <!-- <span>Administrative control and project operations</span> -->
                 </button>
 
                 <button type="button"
-                        class="login-role-card {% if (selected_role or 'admin') == 'faculty' %}active{% endif %}"
+                        class="login-role-card {% if (selected_role or 'leadership') == 'faculty' %}active{% endif %}"
                         data-role="faculty"
                         data-label="Mentor Email"
                         data-placeholder="Enter mentor or faculty email"
@@ -56,7 +56,7 @@
                 </button>
 
                 <button type="button"
-                        class="login-role-card {% if (selected_role or 'admin') == 'student' %}active{% endif %}"
+                        class="login-role-card {% if (selected_role or 'leadership') == 'student' %}active{% endif %}"
                         data-role="student"
                         data-label="Student PRN"
                         data-placeholder="Enter your PRN"
@@ -71,8 +71,8 @@
             <div class="login-role-helper" id="loginRoleHelper"></div>
 
             <div class="mb-3">
-                <label id="loginIdentifierLabel">Coordinator Email</label>
-                <input type="text" name="email" id="loginIdentifierInput" class="form-control" placeholder="Enter project coordinator email" required>
+                <label id="loginIdentifierLabel">Leadership Email</label>
+                <input type="text" name="email" id="loginIdentifierInput" class="form-control" placeholder="Enter director / PC / AC / HOD email" required>
             </div>
 
             <div class="mb-3">

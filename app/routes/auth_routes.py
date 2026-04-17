@@ -7,12 +7,24 @@ from app.models.user_model import User
 auth_bp = Blueprint("auth", __name__)
 
 
+def _normalize_designation(value):
+    return str(value or "").strip().lower().replace(" ", "_") or "faculty"
+
+
+LEADERSHIP_DESIGNATIONS = {
+    "director",
+    "project_coordinator",
+    "academic_coordinator",
+    "hod"
+}
+
+
 @auth_bp.route("/", methods=["GET", "POST"])
 def login():
-    selected_role = "admin"
+    selected_role = "leadership"
 
     if request.method == "POST":
-        selected_role = request.form.get("login_role", "admin")
+        selected_role = request.form.get("login_role", "leadership")
         identifier_label = "PRN" if selected_role == "student" else "email"
 
         username = request.form["email"].strip()
@@ -26,8 +38,19 @@ def login():
 
         if selected_role == "student":
             user_data = current_app.db.students.find_one({"prn": username})
+        elif selected_role == "faculty":
+            user_data = current_app.db.users.find_one({"email": username, "role": "faculty"})
+            if user_data and _normalize_designation(user_data.get("designation")) in LEADERSHIP_DESIGNATIONS:
+                flash("This account uses Leadership login. Please select the Leadership card.", "warning")
+                return render_template("auth/login.html", selected_role=selected_role)
+        elif selected_role == "leadership":
+            user_data = current_app.db.users.find_one({"email": username, "role": {"$in": ["admin", "faculty"]}})
+            if user_data and _normalize_designation(user_data.get("designation")) not in LEADERSHIP_DESIGNATIONS:
+                flash("This account uses Mentor login. Please select the Mentor card.", "warning")
+                return render_template("auth/login.html", selected_role=selected_role)
         else:
-            user_data = current_app.db.users.find_one({"email": username, "role": selected_role})
+            flash("Invalid login role selected.", "warning")
+            return render_template("auth/login.html", selected_role="leadership")
 
         if not user_data:
             flash(f"No account found with that {identifier_label}.", "warning")

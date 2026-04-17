@@ -290,3 +290,20 @@ def designation_update_email(name, designation_label, changed_by_name, previous_
         </p>
         """
     )
+
+
+def evaluation_update_email(student_name, updated_by_name, total_marks, status_text="updated"):
+    return email_shell(
+        "ZIBACAR Evaluation Update",
+        "Your evaluation sheet was updated",
+        f"Hello <b>{student_name}</b>, your internship/project evaluation has been {status_text}.",
+        f"""
+        <div style="padding:18px;border-radius:16px;background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;">
+            <p style="margin:0 0 8px;"><b>Total Marks:</b> {total_marks} / 30</p>
+            <p style="margin:0;"><b>Updated By:</b> {updated_by_name}</p>
+        </div>
+        <p style="margin:24px 0 0;">
+            Please log in to the portal and open the Evaluation page to review details.
+        </p>
+        """
+    )

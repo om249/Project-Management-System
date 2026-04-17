@@ -395,6 +395,35 @@ def submissions():
     )
 
 
+@student_bp.route("/evaluation")
+@login_required
+@role_required("student")
+def evaluation_sheet():
+    student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
+    evaluation = None
+
+    if student:
+        evaluation = current_app.db.evaluations.find_one(
+            {
+                "student_id": student["_id"],
+                "session_id": student.get("session_id")
+            },
+            sort=[("updated_at", -1)]
+        )
+
+        if not evaluation:
+            evaluation = current_app.db.evaluations.find_one(
+                {"student_id": student["_id"]},
+                sort=[("updated_at", -1)]
+            )
+
+    return render_template(
+        "student/evaluation.html",
+        student=student,
+        evaluation=evaluation
+    )
+
+
 @student_bp.route("/final-project")
 @login_required
 @role_required("student")

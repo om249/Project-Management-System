@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">My Evaluation</h2>
+
+<div class="card modern-card">
+    <div class="dashboard-section-head">
+        <div>
+            <h3 class="section-title">Internship / Project Evaluation Sheet</h3>
+            <span>View-only evaluation details shared by your evaluator.</span>
+        </div>
+    </div>
+
+    <div class="table-scroll-wrap">
+        <table class="custom-table modern-table">
+            <thead>
+                <tr>
+                    <th>Roll Number</th>
+                    <th>Student Name</th>
+                    <th>Guide Name</th>
+                    <th>Project Title</th>
+                    <th>Synopsis Status</th>
+                    <th>Chapter 3 (10)</th>
+                    <th>Chapter 4 (10)</th>
+                    <th>Execution / Demo / GitHub (10)</th>
+                    <th>Total (30)</th>
+                    <th>Signature</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>{{ student.get('roll_no') or student.get('prn') }}</td>
+                    <td>{{ student.get('name') }}</td>
+                    <td>{{ evaluation.get('guide_name', '-') if evaluation else '-' }}</td>
+                    <td>{{ evaluation.get('project_title', '-') if evaluation else '-' }}</td>
+                    <td>{{ evaluation.get('synopsis_status', 'No') if evaluation else 'No' }}</td>
+                    <td>{{ evaluation.get('chapter3', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('chapter4', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('execution_demo', 0) if evaluation else 0 }}</td>
+                    <td>
+                        <strong>
+                            {{ evaluation.get('total', 0) if evaluation else 0 }}
+                        </strong>
+                    </td>
+                    <td>{{ evaluation.get('signature', '-') if evaluation else '-' }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    {% if evaluation and evaluation.get('updated_at') %}
+    <p class="section-subtitle">Last updated on {{ evaluation.updated_at.strftime("%d %b %Y, %I:%M %p") }}</p>
+    {% endif %}
+</div>
+
+{% endblock %}

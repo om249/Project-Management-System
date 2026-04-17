@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="page-title">Evaluation Sheet</h2>
+
+<section class="evaluation-page">
+<div class="card evaluation-filters-card">
+    <div class="session-toolbar">
+        <div>
+            <h4>Internship/Project Evaluation</h4>
+            <p class="section-subtitle">Sheet format aligned to your shared evaluation structure (without Offer Letter).</p>
+        </div>
+        <div class="session-toolbar-actions">
+            <form method="GET" action="{{ url_for('admin.evaluation_sheet') }}" class="session-filter-form" id="evaluationFiltersForm">
+                <select name="session" onchange="this.form.submit()">
+                    {% for session in sessions %}
+                    <option value="{{ session._id }}" {% if selected_session and session._id == selected_session._id %}selected{% endif %}>
+                        {{ session.name }}{% if session.is_active %} - Current{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+
+                {% if can_filter_all %}
+                <select name="batch" onchange="this.form.submit()">
+                    <option value="">All Batches</option>
+                    {% for batch in batches %}
+                    <option value="{{ batch._id }}" {% if selected_batch and batch._id == selected_batch._id %}selected{% endif %}>
+                        {{ batch.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                {% else %}
+                <span class="deadline-pill">{{ selected_batch.name if selected_batch else "No assigned batch" }}</span>
+                {% endif %}
+            </form>
+
+            <a href="{{ url_for('admin.export_evaluation_sheet', session=selected_session._id, batch=(selected_batch._id if selected_batch else '')) }}"
+               class="btn-primary-custom no-page-loader">
+                <i class="fas fa-file-excel"></i> Download Sheet
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="card modern-card evaluation-sheet-card">
+    <div class="table-scroll-wrap evaluation-table-scroll">
+        <table class="custom-table modern-table evaluation-table">
+            <thead>
+                <tr>
+                    <th>SN</th>
+                    <th>Roll Number</th>
+                    <th>Student Name</th>
+                    <th>Guide Name</th>
+                    <th>Project Title</th>
+                    <th>Synopsis Status (Yes/No)</th>
+                    <th>Chapter 3 (10)</th>
+                    <th>Chapter 4 (10)</th>
+                    <th>Project execution/demo/github link (10)</th>
+                    <th>Total (30)</th>
+                    <th>Signature</th>
+                    {% if can_edit_evaluation %}<th>Action</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for student in students %}
+                {% set row = evaluation_map.get(student._id|string) %}
+                {% set student_total = row.get('total', ((row.get('chapter3', 0) or 0) + (row.get('chapter4', 0) or 0) + (row.get('execution_demo', 0) or 0))) if row else 0 %}
+                {% set save_form_id = "save-" ~ student._id|string %}
+                {% set delete_form_id = "delete-" ~ student._id|string %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ student.get('roll_no') or student.get('prn') }}</td>
+                    <td>{{ student.get('name') }}</td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <input type="text" name="guide_name" form="{{ save_form_id }}" value="{{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}">
+                        {% else %}
+                        {{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <input type="text" name="project_title" form="{{ save_form_id }}" value="{{ row.get('project_title') if row else '' }}">
+                        {% else %}
+                        {{ row.get('project_title') if row else '-' }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <select name="synopsis_status" form="{{ save_form_id }}">
+                            <option value="Yes" {% if row and row.get('synopsis_status') == 'Yes' %}selected{% endif %}>Yes</option>
+                            <option value="No" {% if not row or row.get('synopsis_status') != 'Yes' %}selected{% endif %}>No</option>
+                        </select>
+                        {% else %}
+                        {{ row.get('synopsis_status', 'No') if row else 'No' }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <input type="number" min="0" max="10" step="0.01" name="chapter3" form="{{ save_form_id }}" value="{{ row.get('chapter3', 0) if row else 0 }}">
+                        {% else %}
+                        {{ row.get('chapter3', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <input type="number" min="0" max="10" step="0.01" name="chapter4" form="{{ save_form_id }}" value="{{ row.get('chapter4', 0) if row else 0 }}">
+                        {% else %}
+                        {{ row.get('chapter4', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <input type="number" min="0" max="10" step="0.01" name="execution_demo" form="{{ save_form_id }}" value="{{ row.get('execution_demo', 0) if row else 0 }}">
+                        {% else %}
+                        {{ row.get('execution_demo', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    <td><strong>{{ student_total }}</strong></td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <input type="text" name="signature" form="{{ save_form_id }}" value="{{ row.get('signature') if row else '' }}">
+                        {% else %}
+                        {{ row.get('signature', '-') if row else '-' }}
+                        {% endif %}
+                    </td>
+                    {% if can_edit_evaluation %}
+                    <td class="action-buttons">
+                        <form id="{{ save_form_id }}" method="POST" action="{{ url_for('admin.save_evaluation_row', student_id=student._id) }}">
+                            <input type="hidden" name="session_id" value="{{ selected_session._id }}">
+                            <input type="hidden" name="batch_id" value="{{ selected_batch._id if selected_batch else '' }}">
+                            <button type="submit" class="btn-edit">Save</button>
+                        </form>
+                        <form id="{{ delete_form_id }}" method="POST" action="{{ url_for('admin.delete_evaluation_row', student_id=student._id) }}">
+                            <input type="hidden" name="session_id" value="{{ selected_session._id }}">
+                            <input type="hidden" name="batch_id" value="{{ selected_batch._id if selected_batch else '' }}">
+                            <button type="submit" class="btn-remove">Remove</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="{{ 12 if can_edit_evaluation else 11 }}" class="text-center text-muted">
+                        No students available for this filter.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+</section>
+
+{% endblock %}

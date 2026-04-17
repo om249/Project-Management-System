@@ -20,7 +20,7 @@
         <div>
             <span class="dashboard-kicker">Admin Control</span>
             <h3>Director-led role governance</h3>
-            <p class="section-subtitle">Director can transfer Director access and assign operational designations: Project Coordinator, Academic Coordinator, and HOD. All non-Director staff remain faculty login users.</p>
+            <p class="section-subtitle">Director can assign and update these designations: Director, Project Coordinator, Academic Coordinator, and HOD.</p>
         </div>
 
         <div class="admin-access-summary-grid">
@@ -36,7 +36,7 @@
         <div class="dashboard-section-head">
             <div>
                 <h4>Staff Designations</h4>
-                <span>Assign one Project Coordinator, set AC/HOD roles, transfer Director when needed, or reset a user back to Faculty.</span>
+                <span>Assign one Project Coordinator, set AC/HOD roles, or transfer Director when needed.</span>
             </div>
         </div>
 
@@ -64,8 +64,14 @@
                             <span class="status-badge approved">Full Director Access</span>
                             {% elif member.designation == "project_coordinator" %}
                             <span class="status-badge pending">Operations + Mentor</span>
+                            <span class="status-badge approved">Current PC</span>
                             {% elif member.designation in ["academic_coordinator", "hod"] %}
                             <span class="status-badge pending">Reports + Mentor</span>
+                            {% if member.designation == "academic_coordinator" %}
+                            <span class="status-badge approved">Current AC</span>
+                            {% else %}
+                            <span class="status-badge approved">Current HOD</span>
+                            {% endif %}
                             {% else %}
                             <span class="status-badge neutral">Mentor Access</span>
                             {% endif %}
@@ -75,7 +81,7 @@
                         {% if member.is_director %}
                         <span class="text-muted">Current owner</span>
                         {% else %}
-                        <div class="admin-access-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <div class="admin-access-actions">
                             <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
                                 <input type="hidden" name="designation" value="director">
                                 <button type="submit" class="btn-success btn-sm-custom">Make Director</button>
@@ -86,16 +92,17 @@
                             </form>
                             <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
                                 <input type="hidden" name="designation" value="academic_coordinator">
-                                <button type="submit" class="btn-sm-custom" style="background:#2563eb;">Make AC</button>
+                                <button type="submit" class="btn-sm-custom btn-ac">Make AC</button>
                             </form>
                             <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
                                 <input type="hidden" name="designation" value="hod">
-                                <button type="submit" class="btn-sm-custom" style="background:#7c3aed;">Make HOD</button>
+                                <button type="submit" class="btn-sm-custom btn-hod">Make HOD</button>
                             </form>
-                            <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
-                                <input type="hidden" name="designation" value="faculty">
-                                <button type="submit" class="btn-danger btn-sm-custom">Set Faculty</button>
+                            {% if member.designation in ["project_coordinator", "academic_coordinator", "hod"] %}
+                            <form method="POST" action="{{ url_for('admin.remove_staff_designation', user_id=member._id) }}">
+                                <button type="submit" class="btn-sm-custom btn-danger">Remove {{ designation_labels.get(member.designation, "Role") }}</button>
                             </form>
+                            {% endif %}
                         </div>
                         {% endif %}
                     </td>
