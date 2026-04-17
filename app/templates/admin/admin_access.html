@@ -19,13 +19,13 @@
     <div class="card admin-access-hero">
         <div>
             <span class="dashboard-kicker">Admin Control</span>
-            <h3>Transfer project coordinator ownership safely</h3>
-            <p class="section-subtitle">There is only one admin in the system, and that admin is always the project coordinator. When you promote a new person, the previous admin becomes faculty automatically.</p>
+            <h3>Director-led role governance</h3>
+            <p class="section-subtitle">Director can transfer Director access and assign operational designations: Project Coordinator, Academic Coordinator, and HOD. All non-Director staff remain faculty login users.</p>
         </div>
 
         <div class="admin-access-summary-grid">
             <div class="admin-access-summary-card">
-                <span>Current Admin + Project Coordinator</span>
+                <span>Current Director</span>
                 <strong>{{ current_admin.name if current_admin else "Not Set" }}</strong>
                 <p>{{ current_admin.email if current_admin else "No email available" }}</p>
             </div>
@@ -35,8 +35,8 @@
     <div class="card">
         <div class="dashboard-section-head">
             <div>
-                <h4>Current Admin Access</h4>
-                <span>The project coordinator is the only admin account in the system and can also work as a mentor by taking a batch.</span>
+                <h4>Staff Designations</h4>
+                <span>Assign one Project Coordinator, set AC/HOD roles, transfer Director when needed, or reset a user back to Faculty.</span>
             </div>
         </div>
 
@@ -45,68 +45,64 @@
                 <tr>
                     <th>Name</th>
                     <th>Email</th>
-                    <th>Role</th>
-                    <th>Privileges</th>
+                    <th>Designation</th>
+                    <th>Access</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
-                {% for admin_user in admins %}
-                <tr>
-                    <td>{{ admin_user.name }}</td>
-                    <td>{{ admin_user.email }}</td>
-                    <td><span class="badge neutral">Admin</span></td>
-                    <td>
-                        <div class="admin-access-badges">
-                            <span class="status-badge approved">Current Admin</span>
-                            <span class="status-badge pending">Project Coordinator</span>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="text-muted">Active owner</span>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="5" class="text-muted">No current admin is configured yet.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <div class="card">
-        <div class="dashboard-section-head">
-            <div>
-                <h4>Eligible Faculty</h4>
-                <span>Promoting a faculty member here transfers the full admin and project coordinator role to them in one step.</span>
-            </div>
-        </div>
-
-        <table class="custom-table">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for member in faculty_candidates %}
+                {% for member in staff_rows %}
                 <tr>
                     <td>{{ member.name }}</td>
                     <td>{{ member.email }}</td>
                     <td>
-                        <div class="admin-access-actions">
-                            <form method="POST" action="{{ url_for('admin.assign_admin_and_project_coordinator', user_id=member._id) }}">
-                                <button type="submit" class="btn-success btn-sm-custom">Promote to Admin + Coordinator</button>
+                        <span class="badge neutral">{{ designation_labels.get(member.designation, "Faculty") }}</span>
+                    </td>
+                    <td>
+                        <div class="admin-access-badges">
+                            {% if member.designation == "director" %}
+                            <span class="status-badge approved">Full Director Access</span>
+                            {% elif member.designation == "project_coordinator" %}
+                            <span class="status-badge pending">Operations + Mentor</span>
+                            {% elif member.designation in ["academic_coordinator", "hod"] %}
+                            <span class="status-badge pending">Reports + Mentor</span>
+                            {% else %}
+                            <span class="status-badge neutral">Mentor Access</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        {% if member.is_director %}
+                        <span class="text-muted">Current owner</span>
+                        {% else %}
+                        <div class="admin-access-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
+                                <input type="hidden" name="designation" value="director">
+                                <button type="submit" class="btn-success btn-sm-custom">Make Director</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
+                                <input type="hidden" name="designation" value="project_coordinator">
+                                <button type="submit" class="btn-primary btn-sm-custom">Make PC</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
+                                <input type="hidden" name="designation" value="academic_coordinator">
+                                <button type="submit" class="btn-sm-custom" style="background:#2563eb;">Make AC</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
+                                <input type="hidden" name="designation" value="hod">
+                                <button type="submit" class="btn-sm-custom" style="background:#7c3aed;">Make HOD</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('admin.set_staff_designation', user_id=member._id) }}">
+                                <input type="hidden" name="designation" value="faculty">
+                                <button type="submit" class="btn-danger btn-sm-custom">Set Faculty</button>
                             </form>
                         </div>
+                        {% endif %}
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="3" class="text-muted">No faculty users are currently available for promotion.</td>
+                    <td colspan="5" class="text-muted">No staff users are available.</td>
                 </tr>
                 {% endfor %}
             </tbody>

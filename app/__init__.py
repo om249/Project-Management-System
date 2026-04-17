@@ -45,6 +45,18 @@ def create_app():
 
     @app.context_processor
     def inject_notifications():
+        def normalize_designation(record):
+            if not record:
+                return "faculty"
+            designation = str(record.get("designation") or "").strip().lower().replace(" ", "_")
+            if designation in {"director", "project_coordinator", "academic_coordinator", "hod", "faculty"}:
+                return designation
+            if record.get("role") == "admin":
+                return "director"
+            if record.get("is_project_coordinator"):
+                return "project_coordinator"
+            return "faculty"
+
         def format_notification_time(dt):
             if not dt:
                 return "Just now"
@@ -56,8 +68,21 @@ def create_app():
 
         if current_user.is_authenticated:
             current_user_record = None
+            current_designation = None
+            can_manage_designations = False
+            can_manage_operations = False
+            can_view_reports = False
+            can_view_student_directory = False
+            can_access_mentor_tools = False
+
             if current_user.role in ["admin", "faculty"]:
                 current_user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
+                current_designation = normalize_designation(current_user_record)
+                can_manage_designations = current_designation == "director"
+                can_manage_operations = current_designation in {"project_coordinator"}
+                can_view_reports = current_designation in {"director", "project_coordinator", "academic_coordinator", "hod"}
+                can_view_student_directory = current_designation in {"director", "project_coordinator", "academic_coordinator", "hod"}
+                can_access_mentor_tools = current_designation in {"project_coordinator", "academic_coordinator", "hod", "faculty"}
             elif current_user.role == "student":
                 current_user_record = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
 
@@ -67,14 +92,26 @@ def create_app():
                 notifications=notifications,
                 unread_count=unread_count,
                 format_notification_time=format_notification_time,
-                current_user_record=current_user_record
+                current_user_record=current_user_record,
+                current_designation=current_designation,
+                can_manage_designations=can_manage_designations,
+                can_manage_operations=can_manage_operations,
+                can_view_reports=can_view_reports,
+                can_view_student_directory=can_view_student_directory,
+                can_access_mentor_tools=can_access_mentor_tools
             )
 
         return dict(
             notifications=[],
             unread_count=0,
             format_notification_time=format_notification_time,
-            current_user_record=None
+            current_user_record=None,
+            current_designation=None,
+            can_manage_designations=False,
+            can_manage_operations=False,
+            can_view_reports=False,
+            can_view_student_directory=False,
+            can_access_mentor_tools=False
         )
 
     @app.errorhandler(403)
@@ -82,10 +119,20 @@ def create_app():
         if current_user.is_authenticated:
             flash("Your access was updated. You have been moved to the correct dashboard.", "info")
 
-            if current_user.role == "admin":
-                return redirect(url_for("admin.dashboard"))
+            if current_user.role in {"admin", "faculty"}:
+                user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
+                designation = "faculty"
+                if user_record:
+                    designation = str(user_record.get("designation") or "").strip().lower().replace(" ", "_")
+                    if designation not in {"director", "project_coordinator", "academic_coordinator", "hod", "faculty"}:
+                        designation = "director" if user_record.get("role") == "admin" else "faculty"
 
-            if current_user.role == "faculty":
+                if designation == "director":
+                    return redirect(url_for("admin.director_dashboard"))
+
+                if designation == "project_coordinator":
+                    return redirect(url_for("admin.dashboard"))
+
                 return redirect(url_for("admin.faculty_dashboard"))
 
             if current_user.role == "student":

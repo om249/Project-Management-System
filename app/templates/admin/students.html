@@ -4,43 +4,46 @@
 <h2 class="page-title">Student Management</h2>
 
 <div class="card">
-<div class="session-toolbar">
-    <div>
-        <h4>Academic Sessions</h4>
-        <p class="section-subtitle">Separate each intake year and keep older records easy to revisit.</p>
+    <div class="session-toolbar">
+        <div>
+            <h4>Academic Sessions</h4>
+            <p class="section-subtitle">Separate each intake year and keep older records easy to revisit.</p>
+        </div>
+
+        <div class="session-toolbar-actions">
+            <form method="GET" action="{{ url_for('admin.manage_students') }}" class="session-filter-form">
+                <select name="session" onchange="this.form.submit()">
+                    {% for session in sessions %}
+                    <option value="{{ session._id }}" {% if selected_session and session._id == selected_session._id %}selected{% endif %}>
+                        {{ session.name }}{% if session.is_active %} - Current{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
+
+            {% if can_edit_students and selected_session and not selected_session.is_active %}
+            <form method="POST" action="{{ url_for('admin.activate_academic_session', session_id=selected_session._id) }}">
+                <input type="hidden" name="next_url" value="{{ url_for('admin.manage_students', session=selected_session._id) }}">
+                <button type="submit" class="btn-edit">Set As Current</button>
+            </form>
+            {% endif %}
+        </div>
     </div>
 
-    <div class="session-toolbar-actions">
-        <form method="GET" action="{{ url_for('admin.manage_students') }}" class="session-filter-form">
-            <select name="session" onchange="this.form.submit()">
-                {% for session in sessions %}
-                <option value="{{ session._id }}" {% if selected_session and session._id == selected_session._id %}selected{% endif %}>
-                    {{ session.name }}{% if session.is_active %} • Current{% endif %}
-                </option>
-                {% endfor %}
-            </select>
-        </form>
-
-        {% if selected_session and not selected_session.is_active %}
-        <form method="POST" action="{{ url_for('admin.activate_academic_session', session_id=selected_session._id) }}">
-            <input type="hidden" name="next_url" value="{{ url_for('admin.manage_students', session=selected_session._id) }}">
-            <button type="submit" class="btn-edit">Set As Current</button>
-        </form>
-        {% endif %}
-    </div>
+    {% if can_edit_students %}
+    <form method="POST" action="{{ url_for('admin.create_academic_session') }}" class="inline-form session-create-form">
+        <input type="hidden" name="next_url" value="{{ url_for('admin.manage_students', session=selected_session._id) }}">
+        <input type="text" name="name" placeholder="Create new session (e.g. 2026-28)" required>
+        <label class="session-checkbox">
+            <input type="checkbox" name="make_active">
+            Make current session
+        </label>
+        <button type="submit" class="btn-primary-custom">Create Session</button>
+    </form>
+    {% endif %}
 </div>
 
-<form method="POST" action="{{ url_for('admin.create_academic_session') }}" class="inline-form session-create-form">
-    <input type="hidden" name="next_url" value="{{ url_for('admin.manage_students', session=selected_session._id) }}">
-    <input type="text" name="name" placeholder="Create new session (e.g. 2026-28)" required>
-    <label class="session-checkbox">
-        <input type="checkbox" name="make_active">
-        Make current session
-    </label>
-    <button type="submit" class="btn-primary-custom">Create Session</button>
-</form>
-</div>
-
+{% if can_edit_students %}
 <div class="card">
 
 <h4>Add Student</h4>
@@ -63,19 +66,12 @@
     <input type="hidden" name="session_id" value="{{ selected_session._id }}">
 
     <input type="text" name="name" placeholder="Student Name" required>
-
     <input type="text" name="prn" placeholder="PRN" required>
-
     <input type="email" name="email" placeholder="Email" required>
-
     <input type="tel" name="student_mobile" placeholder="Student Mobile No." required>
-
     <input type="tel" name="parent_mobile" placeholder="Parent Mobile No." required>
-
     <input type="text" name="student_class" placeholder="Class" required>
-
     <input type="text" name="division" placeholder="Division" required>
-
     <input type="text" name="roll_no" placeholder="Roll No." required>
 
     <select name="batch_id" required>
@@ -86,12 +82,13 @@
     </select>
 
     <button type="submit" class="btn-add">Add</button>
-
 </form>
 
 </div>
+{% endif %}
 
 
+{% if can_edit_students %}
 <div class="card">
 
 <h4>Bulk Upload</h4>
@@ -101,37 +98,33 @@
       action="{{ url_for('admin.upload_students') }}"
       enctype="multipart/form-data"
       class="upload-form">
-<input type="hidden" name="session_id" value="{{ selected_session._id }}">
+    <input type="hidden" name="session_id" value="{{ selected_session._id }}">
 
-<div class="upload-container">
+    <div class="upload-container">
+        <label class="file-upload">
+            <input type="file" id="fileInput" name="file" required>
+            <span id="fileLabel">Choose Excel File</span>
+        </label>
 
-<label class="file-upload">
-
-<input type="file"
-       id="fileInput"
-       name="file"
-       required>
-
-<span id="fileLabel">Choose Excel File</span>
-
-</label>
-
-<button class="btn-primary-custom upload-btn">
-Upload Students
-</button>
-
-</div>
-
+        <button class="btn-primary-custom upload-btn">
+            Upload Students
+        </button>
+    </div>
 </form>
 
 </div>
+{% endif %}
 
 
 <div class="card">
 
 <h4>Student List</h4>
 <p class="section-subtitle">Showing records for <strong>{{ selected_session.name }}</strong></p>
+{% if not can_edit_students %}
+<p class="section-subtitle">View-only access: you can review student records but cannot modify them.</p>
+{% endif %}
 
+<div class="table-scroll-wrap">
 <table class="custom-table">
 
 <thead>
@@ -150,10 +143,8 @@ Upload Students
 </thead>
 
 <tbody>
-
 {% for s in students %}
 <tr>
-
 <td>{{ s.prn }}</td>
 <td>{{ s.name }}</td>
 <td>{{ s.email }}</td>
@@ -164,40 +155,29 @@ Upload Students
 <td>{{ s.get('roll_no') or "-" }}</td>
 <td>{{ s.year }}</td>
 <td>{{ s.batch_name }}</td>
-
 </tr>
 {% endfor %}
-
 </tbody>
 
 </table>
+</div>
 
 </div>
 
 
-<!-- FIXED SCRIPT LOCATION -->
-
 <script>
-
 document.addEventListener("DOMContentLoaded", function(){
+    const fileInput = document.getElementById("fileInput");
+    const fileLabel = document.getElementById("fileLabel");
 
-const fileInput = document.getElementById("fileInput");
-const fileLabel = document.getElementById("fileLabel");
-
-if(fileInput){
-
-fileInput.addEventListener("change", function(){
-
-if(this.files.length > 0){
-fileLabel.textContent = this.files[0].name;
-}
-
+    if(fileInput){
+        fileInput.addEventListener("change", function(){
+            if(this.files.length > 0){
+                fileLabel.textContent = this.files[0].name;
+            }
+        });
+    }
 });
-
-}
-
-});
-
 </script>
 
 {% endblock %}

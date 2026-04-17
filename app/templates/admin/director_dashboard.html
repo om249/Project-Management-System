@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="page-title">Director Dashboard</h2>
+
+<section class="admin-dashboard">
+    <div class="admin-hero card">
+        <div class="admin-hero-copy">
+            <span class="dashboard-kicker">Director Control Tower</span>
+            <h3>Institution-wide project governance</h3>
+            <p>
+                Track overall progress, review critical queues, and monitor platform health
+                without entering day-to-day mentor operations.
+            </p>
+
+            <div class="dashboard-action-row">
+                <a href="{{ url_for('admin.manage_students') }}" class="btn-edit">
+                    <i class="fas fa-user-graduate"></i> View Students
+                </a>
+                <a href="{{ url_for('admin.admin_final_projects') }}" class="btn-primary-custom">
+                    <i class="fas fa-folder-tree"></i> View Project Submissions
+                </a>
+                <a href="{{ url_for('admin.manage_admin_access') }}" class="btn-edit">
+                    <i class="fas fa-user-shield"></i> Manage Admin Access
+                </a>
+            </div>
+        </div>
+
+        <div class="admin-hero-stats">
+            <div class="admin-hero-stat">
+                <span>Total Students</span>
+                <strong>{{ total_students }}</strong>
+            </div>
+            <div class="admin-hero-stat">
+                <span>Total Faculty</span>
+                <strong>{{ total_faculty }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="admin-metrics-grid">
+        <div class="analytics-card">
+            <h4><i class="fa fa-layer-group"></i> Batches</h4>
+            <p>{{ total_batches }}</p>
+        </div>
+        <div class="analytics-card">
+            <h4><i class="fa fa-tasks"></i> Progress Reports</h4>
+            <p>{{ total_stages }}</p>
+        </div>
+        <div class="analytics-card">
+            <h4><i class="fa fa-file-alt"></i> Total Submissions</h4>
+            <p>{{ total_submissions }}</p>
+        </div>
+        <div class="analytics-card pending">
+            <h4><i class="fa fa-clock"></i> Pending Reviews</h4>
+            <p>{{ pending_submissions }}</p>
+        </div>
+        <div class="analytics-card approved">
+            <h4><i class="fa fa-check-circle"></i> Approved</h4>
+            <p>{{ approved_submissions }}</p>
+        </div>
+        <div class="analytics-card late">
+            <h4><i class="fa fa-exclamation-triangle"></i> Late</h4>
+            <p>{{ late_submissions }}</p>
+        </div>
+        <div class="analytics-card pending">
+            <h4><i class="fa fa-folder-open"></i> Final Projects Pending</h4>
+            <p>{{ final_projects_pending }}</p>
+        </div>
+    </div>
+
+    <div class="dashboard-dual-grid">
+        <div class="card dashboard-list-card">
+            <div class="dashboard-section-head">
+                <h4>Recent Progress Submissions</h4>
+                <span>Latest upload activity</span>
+            </div>
+
+            <div class="deadline-list">
+                {% for sub in recent_submissions %}
+                <div class="deadline-list-item">
+                    <div>
+                        <strong>{{ student_map.get(sub.student_id|string, {}).get('name', 'Student') }}</strong>
+                        <p>{{ stage_map.get(sub.stage_id|string, {}).get('name', 'Stage') }}</p>
+                    </div>
+                    <span class="deadline-pill">{{ (sub.submitted_at or sub.created_at).strftime("%d %b %Y") if (sub.submitted_at or sub.created_at) else "—" }}</span>
+                </div>
+                {% else %}
+                <div class="empty-state-lite">No recent submissions found.</div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card dashboard-list-card">
+            <div class="dashboard-section-head">
+                <h4>Recent Final Projects</h4>
+                <span>Latest final project uploads</span>
+            </div>
+
+            <div class="deadline-list">
+                {% for sub in recent_final_projects %}
+                <div class="deadline-list-item">
+                    <div>
+                        <strong>{{ student_map.get(sub.student_id|string, {}).get('name', 'Student') }}</strong>
+                        <p>{{ sub.project_title or "Final Project" }}</p>
+                    </div>
+                    <span class="deadline-pill">{{ (sub.submitted_at or sub.created_at).strftime("%d %b %Y") if (sub.submitted_at or sub.created_at) else "—" }}</span>
+                </div>
+                {% else %}
+                <div class="empty-state-lite">No final project submissions found.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

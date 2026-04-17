@@ -17,7 +17,7 @@ from app import bcrypt
 from flask import send_from_directory
 from werkzeug.utils import secure_filename
 from app.services.notification_service import get_notifications, create_notification,  mark_notifications_read
-from app.services.email_service import send_email, student_welcome_email, faculty_welcome_email, submission_email, late_submission_email, status_email, mentor_assignment_email, student_mentor_assigned_email, final_project_status_email, progress_document_email
+from app.services.email_service import send_email, student_welcome_email, faculty_welcome_email, submission_email, late_submission_email, status_email, mentor_assignment_email, student_mentor_assigned_email, final_project_status_email, progress_document_email, designation_update_email
 from app.services.file_converter import convert_to_pdf
 from app.routes.student_routes import submissions
 
@@ -203,69 +203,196 @@ def get_session_deadline_query(session_id, stage_id=None):
     return query
 
 
+DESIGNATION_DIRECTOR = "director"
+DESIGNATION_PROJECT_COORDINATOR = "project_coordinator"
+DESIGNATION_ACADEMIC_COORDINATOR = "academic_coordinator"
+DESIGNATION_HOD = "hod"
+DESIGNATION_FACULTY = "faculty"
+
+STAFF_DESIGNATIONS = {
+    DESIGNATION_DIRECTOR,
+    DESIGNATION_PROJECT_COORDINATOR,
+    DESIGNATION_ACADEMIC_COORDINATOR,
+    DESIGNATION_HOD,
+    DESIGNATION_FACULTY
+}
+
+
+def normalize_designation(value):
+    normalized = str(value or "").strip().lower().replace(" ", "_")
+    return normalized if normalized in STAFF_DESIGNATIONS else DESIGNATION_FACULTY
+
+
+def get_staff_user(user_id=None):
+    target_id = user_id or current_user.id
+    return current_app.db.users.find_one({"_id": ObjectId(target_id)})
+
+
+def get_user_designation(user):
+    if not user:
+        return DESIGNATION_FACULTY
+    return normalize_designation(user.get("designation"))
+
+
+def is_director(user):
+    return get_user_designation(user) == DESIGNATION_DIRECTOR
+
+
+def is_project_coordinator(user):
+    return get_user_designation(user) == DESIGNATION_PROJECT_COORDINATOR
+
+
+def can_manage_operations(user):
+    return get_user_designation(user) in {DESIGNATION_PROJECT_COORDINATOR}
+
+
+def can_view_reports(user):
+    return get_user_designation(user) in {
+        DESIGNATION_DIRECTOR,
+        DESIGNATION_PROJECT_COORDINATOR,
+        DESIGNATION_ACADEMIC_COORDINATOR,
+        DESIGNATION_HOD
+    }
+
+
+def can_view_all_students(user):
+    return get_user_designation(user) in {
+        DESIGNATION_DIRECTOR,
+        DESIGNATION_PROJECT_COORDINATOR,
+        DESIGNATION_ACADEMIC_COORDINATOR,
+        DESIGNATION_HOD
+    }
+
+
+def can_access_mentor_tools(user):
+    if not user:
+        return False
+    if user.get("role") not in ["admin", "faculty"]:
+        return False
+    return get_user_designation(user) in {
+        DESIGNATION_PROJECT_COORDINATOR,
+        DESIGNATION_ACADEMIC_COORDINATOR,
+        DESIGNATION_HOD,
+        DESIGNATION_FACULTY
+    }
+
+
+def designation_label(designation):
+    mapping = {
+        DESIGNATION_DIRECTOR: "Director",
+        DESIGNATION_PROJECT_COORDINATOR: "Project Coordinator",
+        DESIGNATION_ACADEMIC_COORDINATOR: "Academic Coordinator",
+        DESIGNATION_HOD: "HOD",
+        DESIGNATION_FACULTY: "Faculty"
+    }
+    return mapping.get(normalize_designation(designation), "Faculty")
+
+
+def send_designation_update_email(user_record, new_designation, previous_designation=None):
+    if not user_record or not user_record.get("email"):
+        return
+
+    actor = get_staff_user()
+    changed_by_name = actor.get("name", "System Administrator") if actor else "System Administrator"
+
+    try:
+        send_email(
+            user_record["email"],
+            "Your Account Access Has Been Updated",
+            designation_update_email(
+                user_record.get("name", "User"),
+                designation_label(new_designation),
+                changed_by_name,
+                designation_label(previous_designation) if previous_designation else None
+            )
+        )
+    except Exception as e:
+        print("Designation update email error:", e)
+
+
 def ensure_admin_access_state():
-    admins = list(current_app.db.users.find({"role": "admin"}).sort("created_at", 1))
-    if not admins:
+    staff = list(current_app.db.users.find({"role": {"$in": ["admin", "faculty"]}}).sort("created_at", 1))
+    if not staff:
         return []
 
-    if not any(admin.get("can_manage_admins") for admin in admins):
-        current_app.db.users.update_one(
-            {"_id": admins[0]["_id"]},
-            {"$set": {"can_manage_admins": True}}
-        )
-        admins[0]["can_manage_admins"] = True
+    director = next((user for user in staff if normalize_designation(user.get("designation")) == DESIGNATION_DIRECTOR), None)
+    if not director:
+        director = next((user for user in staff if user.get("role") == "admin" and user.get("can_manage_admins")), None)
+    if not director:
+        director = next((user for user in staff if user.get("role") == "admin"), None)
+    if not director:
+        director = staff[0]
 
-    current_admin = next((admin for admin in admins if admin.get("can_manage_admins")), admins[0])
-    extra_admin_ids = [admin["_id"] for admin in admins if admin["_id"] != current_admin["_id"]]
+    project_coordinators = [
+        user for user in staff
+        if normalize_designation(user.get("designation")) == DESIGNATION_PROJECT_COORDINATOR
+    ]
+    if not project_coordinators:
+        legacy_pc = next((user for user in staff if user.get("is_project_coordinator")), None)
+        if legacy_pc and str(legacy_pc["_id"]) != str(director["_id"]):
+            project_coordinators = [legacy_pc]
 
-    if extra_admin_ids:
-        current_app.db.users.update_many(
-            {"_id": {"$in": extra_admin_ids}},
-            {
-                "$set": {
-                    "role": "faculty",
-                    "can_manage_admins": False,
-                    "is_project_coordinator": False
-                }
-            }
-        )
+    chosen_pc = next((user for user in project_coordinators if str(user["_id"]) != str(director["_id"])), None)
 
-    current_app.db.users.update_many(
-        {"_id": {"$ne": current_admin["_id"]}},
-        {"$set": {"is_project_coordinator": False}}
+    for user in staff:
+        desired_role = "faculty"
+        desired_designation = DESIGNATION_FACULTY
+        desired_can_manage_admins = False
+        desired_is_pc = False
+
+        if str(user["_id"]) == str(director["_id"]):
+            desired_role = "admin"
+            desired_designation = DESIGNATION_DIRECTOR
+            desired_can_manage_admins = True
+        elif chosen_pc and str(user["_id"]) == str(chosen_pc["_id"]):
+            desired_designation = DESIGNATION_PROJECT_COORDINATOR
+            desired_is_pc = True
+        else:
+            existing_designation = normalize_designation(user.get("designation"))
+            if existing_designation in {DESIGNATION_ACADEMIC_COORDINATOR, DESIGNATION_HOD}:
+                desired_designation = existing_designation
+
+        update_data = {}
+        if user.get("role") != desired_role:
+            update_data["role"] = desired_role
+        if normalize_designation(user.get("designation")) != desired_designation:
+            update_data["designation"] = desired_designation
+        if bool(user.get("can_manage_admins")) != desired_can_manage_admins:
+            update_data["can_manage_admins"] = desired_can_manage_admins
+        if bool(user.get("is_project_coordinator")) != desired_is_pc:
+            update_data["is_project_coordinator"] = desired_is_pc
+
+        if update_data:
+            current_app.db.users.update_one({"_id": user["_id"]}, {"$set": update_data})
+
+    return list(
+        current_app.db.users.find(
+            {"role": {"$in": ["admin", "faculty"]}}
+        ).sort("created_at", 1)
     )
 
-    current_app.db.users.update_one(
-        {"_id": current_admin["_id"]},
-        {
-            "$set": {
-                "role": "admin",
-                "can_manage_admins": True,
-                "is_project_coordinator": True
-            }
-        }
-    )
 
-    return list(current_app.db.users.find({"role": "admin"}).sort("created_at", 1))
-
-
-def get_privileged_admin():
+def get_director():
     ensure_admin_access_state()
     return current_app.db.users.find_one(
-        {"role": "admin", "can_manage_admins": True},
+        {"role": "admin", "designation": DESIGNATION_DIRECTOR},
         sort=[("created_at", 1)]
     )
 
 
 def current_user_can_manage_admins():
-    privileged_admin = get_privileged_admin()
-    return bool(privileged_admin and str(privileged_admin["_id"]) == str(current_user.id))
+    director = get_director()
+    return bool(director and str(director["_id"]) == str(current_user.id))
 
 
 def mentor_access_required(view_function):
     @wraps(view_function)
     def wrapped_view(*args, **kwargs):
-        if current_user.role not in ["admin", "faculty"]:
+        user = get_staff_user()
+        if is_director(user):
+            flash("Director has a separate dashboard and does not use mentor modules.", "info")
+            return redirect(url_for("admin.director_dashboard"))
+        if not can_access_mentor_tools(user):
             flash("Only mentor accounts can access that page.", "warning")
             return redirect(url_for("auth.login"))
         return view_function(*args, **kwargs)
@@ -273,8 +400,76 @@ def mentor_access_required(view_function):
     return wrapped_view
 
 
-def replace_current_admin(target_user, make_coordinator=False):
-    previous_admin = get_privileged_admin()
+def director_only_required(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        ensure_admin_access_state()
+        user = get_staff_user()
+        if not is_director(user):
+            flash("Only Director can access that dashboard.", "warning")
+            return redirect(url_for("admin.faculty_dashboard"))
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def operations_access_required(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        ensure_admin_access_state()
+        user = get_staff_user()
+        if not can_manage_operations(user):
+            if is_director(user):
+                flash("Director has view governance access, not daily operation management.", "info")
+                return redirect(url_for("admin.director_dashboard"))
+            flash("Only Project Coordinator can manage operations.", "warning")
+            return redirect(url_for("admin.faculty_dashboard"))
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def reports_access_required(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        ensure_admin_access_state()
+        user = get_staff_user()
+        if not can_view_reports(user):
+            flash("You do not have report access.", "warning")
+            return redirect(url_for("admin.faculty_dashboard"))
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def student_directory_access_required(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        ensure_admin_access_state()
+        user = get_staff_user()
+        if not can_view_all_students(user):
+            flash("You do not have access to the full student directory.", "warning")
+            return redirect(url_for("admin.faculty_dashboard"))
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def director_access_required(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        ensure_admin_access_state()
+        if not current_user_can_manage_admins():
+            flash("Only Director can manage role designations and admin transfer.", "danger")
+            return redirect(url_for("admin.dashboard"))
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def transfer_director_access(target_user):
+    previous_director = get_director()
+    target_before = current_app.db.users.find_one({"_id": target_user["_id"]})
     now = datetime.utcnow()
 
     current_app.db.users.update_many(
@@ -282,48 +477,97 @@ def replace_current_admin(target_user, make_coordinator=False):
         {
             "$set": {
                 "role": "faculty",
-                "can_manage_admins": False,
-                "is_project_coordinator": False
+                "designation": DESIGNATION_FACULTY,
+                "can_manage_admins": False
             }
         }
     )
 
-    update_data = {
-        "role": "admin",
-        "can_manage_admins": True,
-        "granted_by": ObjectId(current_user.id),
-        "granted_at": now
-    }
-
-    current_app.db.users.update_many({}, {"$set": {"is_project_coordinator": False}})
-    update_data["is_project_coordinator"] = True
-
     current_app.db.users.update_one(
         {"_id": target_user["_id"]},
-        {"$set": update_data}
+        {
+            "$set": {
+                "role": "admin",
+                "designation": DESIGNATION_DIRECTOR,
+                "can_manage_admins": True,
+                "granted_by": ObjectId(current_user.id),
+                "granted_at": now
+            }
+        }
     )
 
-    if previous_admin and str(previous_admin["_id"]) != str(target_user["_id"]):
+    target_after = current_app.db.users.find_one({"_id": target_user["_id"]})
+    send_designation_update_email(
+        target_after,
+        DESIGNATION_DIRECTOR,
+        get_user_designation(target_before) if target_before else None
+    )
+
+    if previous_director and str(previous_director["_id"]) != str(target_user["_id"]):
         current_app.db.users.update_one(
-            {"_id": previous_admin["_id"]},
-            {
-                "$set": {
-                    "role": "faculty",
-                    "can_manage_admins": False,
-                    "is_project_coordinator": False
-                }
-            }
+            {"_id": previous_director["_id"]},
+            {"$set": {"role": "faculty", "designation": DESIGNATION_FACULTY, "can_manage_admins": False}}
         )
+        previous_director_after = current_app.db.users.find_one({"_id": previous_director["_id"]})
+        send_designation_update_email(
+            previous_director_after,
+            DESIGNATION_FACULTY,
+            DESIGNATION_DIRECTOR
+        )
+
+    ensure_admin_access_state()
+
+
+def assign_designation(target_user, designation):
+    designation = normalize_designation(designation)
+    if designation == DESIGNATION_DIRECTOR:
+        transfer_director_access(target_user)
+        return
+
+    target_before = current_app.db.users.find_one({"_id": target_user["_id"]})
+    update_data = {
+        "role": "faculty",
+        "designation": designation,
+        "can_manage_admins": False,
+        "updated_at": datetime.utcnow(),
+        "updated_by": ObjectId(current_user.id)
+    }
+    update_data["is_project_coordinator"] = designation == DESIGNATION_PROJECT_COORDINATOR
+
+    if designation == DESIGNATION_PROJECT_COORDINATOR:
+        displaced_pc = current_app.db.users.find_one(
+            {"designation": DESIGNATION_PROJECT_COORDINATOR, "_id": {"$ne": target_user["_id"]}}
+        )
+        current_app.db.users.update_many(
+            {"designation": DESIGNATION_PROJECT_COORDINATOR, "_id": {"$ne": target_user["_id"]}},
+            {"$set": {"designation": DESIGNATION_FACULTY, "is_project_coordinator": False}}
+        )
+        if displaced_pc:
+            displaced_pc_after = current_app.db.users.find_one({"_id": displaced_pc["_id"]})
+            send_designation_update_email(
+                displaced_pc_after,
+                DESIGNATION_FACULTY,
+                DESIGNATION_PROJECT_COORDINATOR
+            )
+
+    current_app.db.users.update_one({"_id": target_user["_id"]}, {"$set": update_data})
+    target_after = current_app.db.users.find_one({"_id": target_user["_id"]})
+    send_designation_update_email(
+        target_after,
+        designation,
+        get_user_designation(target_before) if target_before else None
+    )
+    ensure_admin_access_state()
 
 
 def redirect_after_admin_access_change():
-    acting_user = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
+    acting_user = get_staff_user()
 
-    if acting_user and acting_user.get("role") == "admin":
+    if acting_user and is_director(acting_user):
         return redirect(url_for("admin.manage_admin_access"))
 
-    if acting_user and acting_user.get("is_project_coordinator"):
-        return redirect(url_for("admin.manage_batches"))
+    if acting_user and can_manage_operations(acting_user):
+        return redirect(url_for("admin.dashboard"))
 
     return redirect(url_for("admin.faculty_dashboard"))
 
@@ -443,7 +687,7 @@ def get_faculty_assigned_batch(faculty_id, selected_session_id=None):
 # ===================== DASHBOARD =====================
 @admin_bp.route("/dashboard")
 @login_required
-@role_required("admin")
+@operations_access_required
 def dashboard():
     ensure_admin_access_state()
     total_batches = current_app.db.batches.count_documents({})
@@ -483,6 +727,70 @@ def dashboard():
         approved_submissions=approved_submissions,
         late_submissions=late_submissions,
         batch_summaries=batch_summaries,
+        notifications=notifications,
+        unread_count=unread_count
+    )
+
+
+@admin_bp.route("/director/dashboard")
+@login_required
+@director_only_required
+def director_dashboard():
+    ensure_admin_access_state()
+    total_batches = current_app.db.batches.count_documents({})
+    total_stages = current_app.db.stages.count_documents({})
+    total_students = current_app.db.students.count_documents({})
+    total_faculty = current_app.db.users.count_documents({"role": "faculty"})
+    total_submissions = current_app.db.submissions.count_documents({})
+    pending_submissions = current_app.db.submissions.count_documents({"status": "pending"})
+    approved_submissions = current_app.db.submissions.count_documents({"status": "approved"})
+    late_submissions = current_app.db.submissions.count_documents({"late": True})
+    final_projects_pending = current_app.db.final_submissions.count_documents({"status": "pending"})
+
+    recent_submissions = list(
+        current_app.db.submissions.find().sort("submitted_at", -1).limit(6)
+    )
+    recent_final_projects = list(
+        current_app.db.final_submissions.find().sort("submitted_at", -1).limit(6)
+    )
+
+    student_ids = {
+        item.get("student_id")
+        for item in recent_submissions + recent_final_projects
+        if item.get("student_id")
+    }
+    student_map = {
+        str(student["_id"]): student
+        for student in current_app.db.students.find({"_id": {"$in": list(student_ids)}})
+    } if student_ids else {}
+
+    stage_ids = {
+        item.get("stage_id")
+        for item in recent_submissions
+        if item.get("stage_id")
+    }
+    stage_map = {
+        str(stage["_id"]): stage
+        for stage in current_app.db.stages.find({"_id": {"$in": list(stage_ids)}})
+    } if stage_ids else {}
+
+    notifications, unread_count = get_notifications(current_user.id)
+
+    return render_template(
+        "admin/director_dashboard.html",
+        total_batches=total_batches,
+        total_stages=total_stages,
+        total_students=total_students,
+        total_faculty=total_faculty,
+        total_submissions=total_submissions,
+        pending_submissions=pending_submissions,
+        approved_submissions=approved_submissions,
+        late_submissions=late_submissions,
+        final_projects_pending=final_projects_pending,
+        recent_submissions=recent_submissions,
+        recent_final_projects=recent_final_projects,
+        student_map=student_map,
+        stage_map=stage_map,
         notifications=notifications,
         unread_count=unread_count
     )
@@ -547,7 +855,7 @@ def update_admin_profile():
 
 @admin_bp.route("/academic-sessions", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def create_academic_session():
     name = request.form.get("name", "").strip()
     next_url = request.form.get("next_url") or url_for("admin.manage_students")
@@ -581,7 +889,7 @@ def create_academic_session():
 
 @admin_bp.route("/academic-sessions/<session_id>/activate", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def activate_academic_session(session_id):
     next_url = request.form.get("next_url") or url_for("admin.manage_students", session=session_id)
 
@@ -627,7 +935,7 @@ def activate_academic_session(session_id):
 
 @admin_bp.route("/batches", methods=["GET", "POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def manage_batches():
     selected_session_id = request.values.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
@@ -702,7 +1010,7 @@ def manage_batches():
 # ===================== ASSIGN MENTOR =====================
 @admin_bp.route("/assign-mentor", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def assign_mentor():
 
     batch_id = request.form["batch_id"]
@@ -790,7 +1098,7 @@ def assign_mentor():
 # ===================== DELETE BATCH =====================
 @admin_bp.route("/delete-batch/<batch_id>")
 @login_required
-@role_required("admin")
+@operations_access_required
 def delete_batch(batch_id):
     batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
     session_query = {"session": str(batch["session_id"])} if batch and batch.get("session_id") else {}
@@ -802,7 +1110,7 @@ def delete_batch(batch_id):
 # ===================== STAGE MANAGEMENT =====================
 @admin_bp.route("/stages", methods=["GET", "POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def manage_stages():
     selected_session_id = request.values.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
@@ -855,7 +1163,7 @@ def manage_stages():
 
 @admin_bp.route("/progress-documents/upload", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def upload_progress_document():
 
     session_id = request.form.get("session_id")
@@ -943,7 +1251,7 @@ def upload_progress_document():
 
 @admin_bp.route("/progress-documents/<document_id>/delete", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def delete_progress_document(document_id):
 
     document = current_app.db.progress_documents.find_one({"_id": ObjectId(document_id)})
@@ -979,7 +1287,7 @@ def delete_progress_document(document_id):
 # ===================== SAVE SINGLE DEADLINE =====================
 @admin_bp.route("/save-single-deadline", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def save_single_deadline():
 
     stage_id = request.form.get("stage_id")
@@ -1014,7 +1322,7 @@ def save_single_deadline():
 # ===================== DRAG & DROP REORDER =====================
 @admin_bp.route("/update-stage-order", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def update_stage_order():
 
     data = request.get_json()
@@ -1031,7 +1339,7 @@ def update_stage_order():
 # ===================== DELETE STAGE =====================
 @admin_bp.route("/delete-stage/<stage_id>")
 @login_required
-@role_required("admin")
+@operations_access_required
 def delete_stage(stage_id):
 
     current_app.db.stages.delete_one({"_id": ObjectId(stage_id)})
@@ -1043,7 +1351,7 @@ def delete_stage(stage_id):
 # ===================== FACULTY MANAGEMENT =====================
 @admin_bp.route("/faculty", methods=["GET", "POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def manage_faculty():
     ensure_admin_access_state()
     faculty_list = list(current_app.db.users.find({"role": "faculty"}))
@@ -1085,6 +1393,7 @@ def manage_faculty():
             "email": email,
             "password": hashed_password,
             "role": "faculty",
+            "designation": DESIGNATION_FACULTY,
             "created_at": datetime.utcnow()
         })
 
@@ -1105,154 +1414,138 @@ def manage_faculty():
 
 @admin_bp.route("/admin-access")
 @login_required
-@role_required("admin")
+@director_access_required
 def manage_admin_access():
     ensure_admin_access_state()
+    staff_members = list(
+        current_app.db.users.find({"role": {"$in": ["admin", "faculty"]}}).sort("created_at", 1)
+    )
+    director = get_director()
 
-    if not current_user_can_manage_admins():
-        flash("Only the current admin can manage admin access.", "danger")
-        return redirect(url_for("admin.dashboard"))
-
-    admins = list(current_app.db.users.find({"role": "admin"}).sort("created_at", 1))
-    faculty_candidates = list(current_app.db.users.find({"role": "faculty"}).sort("created_at", 1))
-    current_admin = next((admin for admin in admins if admin.get("can_manage_admins")), None)
+    staff_rows = []
+    for member in staff_members:
+        member_designation = get_user_designation(member)
+        staff_rows.append(
+            {
+                "_id": member["_id"],
+                "name": member.get("name", "Not Available"),
+                "email": member.get("email", "Not Available"),
+                "designation": member_designation,
+                "is_director": member_designation == DESIGNATION_DIRECTOR,
+                "is_project_coordinator": member_designation == DESIGNATION_PROJECT_COORDINATOR
+            }
+        )
 
     return render_template(
         "admin/admin_access.html",
-        admins=admins,
-        faculty_candidates=faculty_candidates,
-        current_admin=current_admin
+        staff_rows=staff_rows,
+        current_admin=director,
+        designation_labels={
+            DESIGNATION_DIRECTOR: "Director",
+            DESIGNATION_PROJECT_COORDINATOR: "Project Coordinator",
+            DESIGNATION_ACADEMIC_COORDINATOR: "Academic Coordinator",
+            DESIGNATION_HOD: "HOD",
+            DESIGNATION_FACULTY: "Faculty"
+        }
     )
 
 
 @admin_bp.route("/admin-access/promote/<user_id>", methods=["POST"])
 @login_required
-@role_required("admin")
+@director_access_required
 def promote_user_to_admin(user_id):
     ensure_admin_access_state()
-
-    if not current_user_can_manage_admins():
-        flash("Only the current admin can promote users to admin.", "danger")
-        return redirect(url_for("admin.dashboard"))
-
     user = current_app.db.users.find_one({"_id": ObjectId(user_id)})
-    if not user:
+    if not user or user.get("role") not in ["faculty", "admin"]:
         flash("Selected user was not found.", "danger")
         return redirect(url_for("admin.manage_admin_access"))
 
-    replace_current_admin(user, make_coordinator=True)
+    transfer_director_access(user)
 
-    flash("Admin and project coordinator changed successfully. The previous admin is now faculty.", "success")
+    flash("Director access transferred successfully.", "success")
     return redirect_after_admin_access_change()
 
 
 @admin_bp.route("/admin-access/transfer-privilege/<user_id>", methods=["POST"])
 @login_required
-@role_required("admin")
+@director_access_required
 def transfer_admin_privilege(user_id):
-    ensure_admin_access_state()
-
-    if not current_user_can_manage_admins():
-        flash("Only the current admin can transfer admin access.", "danger")
-        return redirect(url_for("admin.dashboard"))
-
-    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
-    if not target:
-        flash("Selected user was not found.", "danger")
-        return redirect(url_for("admin.manage_admin_access"))
-
-    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
-    if not target:
-        flash("Selected user was not found.", "danger")
-        return redirect(url_for("admin.manage_admin_access"))
-
-    if target.get("role") not in ["faculty", "admin"]:
-        flash("Only faculty or admin users can receive admin access.", "danger")
-        return redirect(url_for("admin.manage_admin_access"))
-
-    replace_current_admin(target, make_coordinator=True)
-    flash("Admin and project coordinator updated successfully.", "success")
-    return redirect_after_admin_access_change()
+    return promote_user_to_admin(user_id)
 
 
 @admin_bp.route("/admin-access/assign-coordinator/<user_id>", methods=["POST"])
 @login_required
-@role_required("admin")
+@director_access_required
 def assign_project_coordinator(user_id):
     ensure_admin_access_state()
-
     target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
-    if not target:
+    if not target or target.get("role") not in ["faculty", "admin"]:
         flash("Selected user was not found.", "danger")
         return redirect(url_for("admin.manage_admin_access"))
-
-    if target.get("role") not in ["faculty", "admin"]:
-        flash("Only faculty or admin users can receive admin access.", "danger")
-        return redirect(url_for("admin.manage_admin_access"))
-
-    replace_current_admin(target, make_coordinator=True)
-    flash("Admin and project coordinator updated successfully.", "success")
+    assign_designation(target, DESIGNATION_PROJECT_COORDINATOR)
+    flash("Project Coordinator assigned successfully.", "success")
     return redirect_after_admin_access_change()
 
 
 @admin_bp.route("/admin-access/assign-admin-coordinator/<user_id>", methods=["POST"])
 @login_required
-@role_required("admin")
+@director_access_required
 def assign_admin_and_project_coordinator(user_id):
+    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
+    if not target or target.get("role") not in ["faculty", "admin"]:
+        flash("Selected user was not found.", "danger")
+        return redirect(url_for("admin.manage_admin_access"))
+    transfer_director_access(target)
+    assign_designation(target, DESIGNATION_PROJECT_COORDINATOR)
+    flash("Director and Project Coordinator updated successfully.", "success")
+    return redirect(url_for("admin.manage_admin_access"))
+
+
+@admin_bp.route("/admin-access/demote/<user_id>", methods=["POST"])
+@login_required
+@director_access_required
+def demote_admin_user(user_id):
     ensure_admin_access_state()
-
-    if not current_user_can_manage_admins():
-        flash("Only the current admin can assign combined admin and coordinator access.", "danger")
-        return redirect(url_for("admin.dashboard"))
-
     target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
     if not target:
         flash("Selected user was not found.", "danger")
         return redirect(url_for("admin.manage_admin_access"))
 
-    if target.get("role") not in ["faculty", "admin"]:
-        flash("Only faculty or admin users can receive combined admin access.", "danger")
-        return redirect(url_for("admin.manage_admin_access"))
-
-    replace_current_admin(target, make_coordinator=True)
-
-    flash("Current admin and project coordinator updated successfully.", "success")
-    return redirect_after_admin_access_change()
-
-
-@admin_bp.route("/admin-access/demote/<user_id>", methods=["POST"])
-@login_required
-@role_required("admin")
-def demote_admin_user(user_id):
-    ensure_admin_access_state()
-
-    if not current_user_can_manage_admins():
-        flash("Only the current admin can demote admins.", "danger")
-        return redirect(url_for("admin.dashboard"))
-
-    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
-    if not target or target.get("role") != "admin":
-        flash("Selected admin was not found.", "danger")
-        return redirect(url_for("admin.manage_admin_access"))
-
     if str(target["_id"]) == str(current_user.id):
-        flash("Transfer current admin access before trying to change your own admin role.", "warning")
+        flash("Transfer Director access first before changing your own designation.", "warning")
         return redirect(url_for("admin.manage_admin_access"))
 
-    if target.get("can_manage_admins"):
-        flash("Current admin access must be transferred before demotion.", "warning")
+    if is_director(target):
+        flash("Transfer Director access before demoting this account.", "warning")
         return redirect(url_for("admin.manage_admin_access"))
 
-    if target.get("is_project_coordinator"):
-        flash("Transfer project coordinator responsibility before demotion.", "warning")
+    assign_designation(target, DESIGNATION_FACULTY)
+    flash("Designation reset to Faculty successfully.", "success")
+    return redirect(url_for("admin.manage_admin_access"))
+
+
+@admin_bp.route("/admin-access/set-designation/<user_id>", methods=["POST"])
+@login_required
+@director_access_required
+def set_staff_designation(user_id):
+    ensure_admin_access_state()
+    designation = normalize_designation(request.form.get("designation"))
+    target = current_app.db.users.find_one({"_id": ObjectId(user_id)})
+    if not target or target.get("role") not in ["faculty", "admin"]:
+        flash("Selected user was not found.", "danger")
         return redirect(url_for("admin.manage_admin_access"))
 
-    current_app.db.users.update_one(
-        {"_id": target["_id"]},
-        {"$set": {"role": "faculty", "can_manage_admins": False, "is_project_coordinator": False}}
-    )
+    if str(target["_id"]) == str(current_user.id) and designation != DESIGNATION_DIRECTOR:
+        flash("Transfer Director role first before changing your own designation.", "warning")
+        return redirect(url_for("admin.manage_admin_access"))
 
-    flash("Admin user demoted to faculty successfully.", "success")
+    if designation == DESIGNATION_DIRECTOR:
+        transfer_director_access(target)
+        flash("Director role transferred successfully.", "success")
+        return redirect_after_admin_access_change()
+
+    assign_designation(target, designation)
+    flash("Designation updated successfully.", "success")
     return redirect(url_for("admin.manage_admin_access"))
 
 
@@ -1290,7 +1583,7 @@ def faculty_profile():
 # ===================== DELETE FACULTY =====================
 @admin_bp.route("/delete-faculty/<faculty_id>")
 @login_required
-@role_required("admin")
+@operations_access_required
 def delete_faculty(faculty_id):
 
     current_app.db.users.delete_one({"_id": ObjectId(faculty_id)})
@@ -1393,8 +1686,10 @@ def faculty_dashboard():
 # ---------------- STUDENT MANAGEMENT ----------------
 @admin_bp.route("/students")
 @login_required
-@role_required("admin")
+@student_directory_access_required
 def manage_students():
+    user = get_staff_user()
+    can_edit_students = can_manage_operations(user)
 
     selected_session_id = request.args.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
@@ -1414,7 +1709,8 @@ def manage_students():
         students=students,
         batches=batches,
         sessions=sessions,
-        selected_session=selected_session
+        selected_session=selected_session,
+        can_edit_students=can_edit_students
     )
 
 # @admin_bp.route("/add-student", methods=["POST"])
@@ -1463,7 +1759,7 @@ def manage_students():
 
 @admin_bp.route("/add-student", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def add_student():
 
     name = request.form["name"]
@@ -1562,7 +1858,7 @@ def add_student():
 # ===================== UPLOAD STUDENTS =====================
 @admin_bp.route("/upload-students", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def upload_students():
 
     file = request.files["file"]
@@ -1794,7 +2090,7 @@ def upload_students():
 
 @admin_bp.route("/download-template")
 @login_required
-@role_required("admin")
+@operations_access_required
 def download_template():
 
     df = pd.DataFrame({
@@ -1817,7 +2113,7 @@ def download_template():
 
 @admin_bp.route("/assign-students/<batch_id>", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def assign_students(batch_id):
 
     student_ids = request.form.getlist("students")
@@ -1838,7 +2134,7 @@ def assign_students(batch_id):
 # ---------------- ASSIGN STUDENTS PAGE ----------------
 @admin_bp.route("/assign-students/<batch_id>")
 @login_required
-@role_required("admin")
+@operations_access_required
 def assign_students_page(batch_id):
 
     batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
@@ -1876,7 +2172,7 @@ def assign_students_page(batch_id):
 # ---------------- SAVE ASSIGNED STUDENTS ----------------
 @admin_bp.route("/save-students/<batch_id>", methods=["POST"])
 @login_required
-@role_required("admin")
+@operations_access_required
 def save_assigned_students(batch_id):
 
     student_ids = request.form.getlist("students")
@@ -2149,7 +2445,7 @@ def mentor_final_projects():
 
 @admin_bp.route("/final-projects")
 @login_required
-@role_required("admin")
+@reports_access_required
 def admin_final_projects():
 
     selected_session_id = request.args.get("session")
@@ -2207,7 +2503,8 @@ def can_review_final_project(final_project):
 
 
 def final_project_review_redirect():
-    if current_user.role == "admin":
+    user = get_staff_user()
+    if can_view_reports(user):
         return redirect(url_for("admin.admin_final_projects"))
     return redirect(url_for("admin.mentor_final_projects"))
 

@@ -82,6 +82,46 @@ def save_final_project_archive(file_storage, student_id):
     return filename
 
 
+def _leadership_users(exclude_ids=None):
+    exclude_ids = {str(item) for item in (exclude_ids or []) if item}
+    target_designations = {
+        "director",
+        "project_coordinator",
+        "academic_coordinator",
+        "hod"
+    }
+    users = list(
+        current_app.db.users.find(
+            {
+                "role": {"$in": ["admin", "faculty"]},
+                "designation": {"$in": list(target_designations)}
+            }
+        )
+    )
+    return [user for user in users if str(user.get("_id")) not in exclude_ids]
+
+
+def notify_leadership(message, email_subject=None, email_html=None, exclude_ids=None):
+    recipients = _leadership_users(exclude_ids=exclude_ids)
+    notified = set()
+    emailed = set()
+
+    for user in recipients:
+        user_id = str(user["_id"])
+        if user_id not in notified:
+            create_notification(user["_id"], message)
+            notified.add(user_id)
+
+        if email_subject and email_html and user.get("email"):
+            if user["email"] in emailed:
+                continue
+            try:
+                send_email(user["email"], email_subject, email_html)
+                emailed.add(user["email"])
+            except Exception as e:
+                print("Leadership email error:", e)
+
+
 # ---------------- STUDENT LOGIN ----------------
 @student_bp.route("/login", methods=["GET", "POST"])
 def student_login():
@@ -477,7 +517,7 @@ def upload_stage(stage_id):
     if faculty_id:
         faculty_id = ObjectId(faculty_id)
 
-    # Notify faculty
+    # Notify mentor
     if faculty_id:
         create_notification(
             faculty_id,
@@ -497,9 +537,17 @@ def upload_stage(stage_id):
             except Exception as e:
                 print("Email error:", e)
 
+    # Notify leadership roles (Director, PC, AC, HOD)
+    leadership_message = f"{student_name} submitted {stage_name} (Pending review)"
+    notify_leadership(
+        leadership_message,
+        email_subject="New Submission Alert",
+        email_html=submission_email(student_name, stage_name),
+        exclude_ids=[faculty_id] if faculty_id else None
+    )
+
     # -------- LATE SUBMISSION --------
     if late:
-        admin = current_app.db.users.find_one({"role": "admin"})
         late_message = f"{student_name} submitted {stage_name} late"
         notified_user_ids = set()
         emailed_addresses = set()
@@ -521,20 +569,12 @@ def upload_stage(stage_id):
                 except Exception as e:
                     print("Email error:", e)
 
-        if admin and str(admin["_id"]) not in notified_user_ids:
-            create_notification(admin["_id"], late_message)
-            notified_user_ids.add(str(admin["_id"]))
-
-        if admin and admin.get("email") and admin["email"] not in emailed_addresses:
-            try:
-                send_email(
-                    admin["email"],
-                    "Late Submission Alert",
-                    late_submission_email(student_name, stage_name)
-                )
-                emailed_addresses.add(admin["email"])
-            except Exception as e:
-                print("Email error:", e)
+        notify_leadership(
+            late_message,
+            email_subject="Late Submission Alert",
+            email_html=late_submission_email(student_name, stage_name),
+            exclude_ids=list(notified_user_ids)
+        )
 
     # Return JSON for AJAX
     if request.headers.get('Accept') == 'application/json' or request.is_json:
@@ -648,19 +688,12 @@ def final_project_submission():
             except Exception as e:
                 print("Email error:", e)
 
-    admin = current_app.db.users.find_one({"role": "admin"})
-    if admin and (not mentor_id or str(admin["_id"]) != str(mentor_id)):
-        create_notification(admin["_id"], notification_message)
-        admin_email = admin.get("email")
-        if admin_email and admin_email not in emailed_addresses:
-            try:
-                send_email(
-                    admin_email,
-                    "Final Project Submission",
-                    final_project_submission_email(student_name, title)
-                )
-            except Exception as e:
-                print("Email error:", e)
+    notify_leadership(
+        notification_message,
+        email_subject="Final Project Submission",
+        email_html=final_project_submission_email(student_name, title),
+        exclude_ids=[mentor_id] if mentor_id else None
+    )
 
     flash("Final project submitted successfully.", "success")
     return redirect(url_for("student.submissions"))

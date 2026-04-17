@@ -37,6 +37,7 @@ def login():
 
             user = User(user_data)
             login_user(user)
+            designation = str(user_data.get("designation") or "").strip().lower().replace(" ", "_")
 
             if not user_data.get("password_changed", True):
                 flash("Please update your password from your profile settings before continuing.", "warning")
@@ -51,9 +52,13 @@ def login():
                     return redirect(url_for("student.student_profile"))
 
             if user.role == "admin":
+                if designation == "director":
+                    return redirect(url_for("admin.director_dashboard"))
                 return redirect(url_for("admin.dashboard"))
 
             elif user.role == "faculty":
+                if designation == "project_coordinator":
+                    return redirect(url_for("admin.dashboard"))
                 return redirect(url_for("admin.faculty_dashboard"))
 
             elif user.role == "student":
@@ -99,9 +104,17 @@ def change_password():
             )
 
         if current_user.role == "admin":
+            current_user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
+            designation = str(current_user_record.get("designation") or "").strip().lower().replace(" ", "_") if current_user_record else ""
+            if designation == "director":
+                return redirect(url_for("admin.director_dashboard"))
             return redirect(url_for("admin.dashboard"))
 
         elif current_user.role == "faculty":
+            current_user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
+            designation = str(current_user_record.get("designation") or "").strip().lower().replace(" ", "_") if current_user_record else ""
+            if designation == "project_coordinator":
+                return redirect(url_for("admin.dashboard"))
             return redirect(url_for("admin.faculty_dashboard"))
 
         elif current_user.role == "student":

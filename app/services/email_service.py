@@ -268,3 +268,25 @@ def progress_document_email(name, stage_name, session_name, document_name, actio
         </p>
         """
     )
+
+
+def designation_update_email(name, designation_label, changed_by_name, previous_designation_label=None):
+    previous_line = ""
+    if previous_designation_label and previous_designation_label != designation_label:
+        previous_line = f"<p style='margin:0 0 8px;'><b>Previous Designation:</b> {previous_designation_label}</p>"
+
+    return email_shell(
+        "ZIBACAR Access Update",
+        "Your account designation has been updated",
+        f"Hello <b>{name}</b>, your staff designation has been updated in the Project Management System.",
+        f"""
+        <div style="padding:18px;border-radius:16px;background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;">
+            {previous_line}
+            <p style="margin:0 0 8px;"><b>New Designation:</b> {designation_label}</p>
+            <p style="margin:0;"><b>Updated By:</b> {changed_by_name}</p>
+        </div>
+        <p style="margin:24px 0 0;">
+            Please sign in again if needed to refresh your access and sidebar modules.
+        </p>
+        """
+    )
