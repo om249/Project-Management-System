@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
+{% set faculty_designation_key = (faculty.designation or 'faculty')|lower|replace(' ', '_') %}
+{% set designation_labels = {
+    'director': 'Director',
+    'project_coordinator': 'Project Coordinator',
+    'academic_coordinator': 'Academic Coordinator',
+    'hod': 'HOD',
+    'faculty': 'Faculty'
+} %}
+{% set faculty_designation_label = designation_labels.get(faculty_designation_key, 'Faculty') %}
 
 <h2 class="page-title">My Profile</h2>
 
@@ -45,6 +54,7 @@
             <div class="profile-chip-row">
                 <span class="profile-chip"><i class="fas fa-envelope"></i> {{ faculty.email }}</span>
                 <span class="profile-chip"><i class="fas fa-phone"></i> {{ faculty.mobile if faculty.mobile else "Phone Not Added" }}</span>
+                <span class="profile-chip"><i class="fas fa-user-tag"></i> {{ faculty_designation_label }}</span>
                 <span class="profile-chip"><i class="fas fa-layer-group"></i> {{ batch.name if batch else "No Batch Assigned" }}</span>
                 <span class="profile-chip"><i class="fas fa-calendar-check"></i> {{ faculty.created_at.strftime("%d %b %Y") if faculty.created_at else "Recently Added" }}</span>
             </div>
@@ -53,7 +63,7 @@
 
     <div class="profile-hero-side">
         <div class="profile-hero-actions">
-            <span class="role-badge">Faculty</span>
+            <span class="role-badge">{{ faculty_designation_label }}</span>
             <button type="button" onclick="toggleEdit()" class="btn-edit">
                 <i class="fas fa-pen"></i> Update Profile
             </button>
@@ -169,8 +179,8 @@
 
                         <div class="profile-readonly-list">
                             <div class="profile-readonly-item">
-                                <span>Role</span>
-                                <strong>Faculty Member</strong>
+                                <span>Designation</span>
+                                <strong>{{ faculty_designation_label }}</strong>
                             </div>
                             <div class="profile-readonly-item">
                                 <span>Current Batch</span>
@@ -243,8 +253,8 @@
             </div>
 
             <div class="info-box">
-                <label>Role</label>
-                <p>Faculty Member</p>
+                <label>Designation</label>
+                <p>{{ faculty_designation_label }}</p>
             </div>
 
             <div class="info-box">

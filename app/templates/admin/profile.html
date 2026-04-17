@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
+{% set admin_designation_key = (admin.designation or ('director' if admin.role == 'admin' else 'faculty'))|lower|replace(' ', '_') %}
+{% set designation_labels = {
+    'director': 'Director',
+    'project_coordinator': 'Project Coordinator',
+    'academic_coordinator': 'Academic Coordinator',
+    'hod': 'HOD',
+    'faculty': 'Faculty'
+} %}
+{% set admin_designation_label = designation_labels.get(admin_designation_key, 'Faculty') %}
 
 <h2 class="page-title">Admin Profile</h2>
 
@@ -44,7 +53,7 @@
 
             <div class="profile-chip-row">
                 <span class="profile-chip"><i class="fas fa-envelope"></i> {{ admin.email }}</span>
-                <span class="profile-chip"><i class="fas fa-user-shield"></i> {{ admin.role|title }}</span>
+                <span class="profile-chip"><i class="fas fa-user-tag"></i> {{ admin_designation_label }}</span>
                 <span class="profile-chip"><i class="fas fa-calendar-check"></i> {{ admin.created_at.strftime("%d %b %Y") if admin.created_at else "Not Available" }}</span>
             </div>
         </div>
@@ -52,7 +61,7 @@
 
     <div class="profile-hero-side">
         <div class="profile-hero-actions">
-            <span class="role-badge">Administrator</span>
+            <span class="role-badge">{{ admin_designation_label }}</span>
             <button type="button" onclick="toggleEdit()" class="btn-edit">
                 <i class="fas fa-pen"></i> Update Profile
             </button>
@@ -162,8 +171,8 @@
 
                         <div class="profile-readonly-list">
                             <div class="profile-readonly-item">
-                                <span>Role</span>
-                                <strong>{{ admin.role|title }}</strong>
+                                <span>Designation</span>
+                                <strong>{{ admin_designation_label }}</strong>
                             </div>
                             <div class="profile-readonly-item">
                                 <span>Joined On</span>
@@ -231,8 +240,8 @@
             </div>
 
             <div class="info-box">
-                <label>System Role</label>
-                <p>{{ admin.role|title }}</p>
+                <label>Designation</label>
+                <p>{{ admin_designation_label }}</p>
             </div>
 
             <div class="info-box">
