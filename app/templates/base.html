@@ -178,6 +178,18 @@ Sign Out
 {% block page_title %}{% endblock %}
 </h2>
 
+{% if current_user.role in ["admin", "faculty"] and can_switch_program %}
+<form method="POST" action="{{ url_for('admin.set_program_context') }}" class="program-switcher-form">
+<input type="hidden" name="next_url" value="{{ request.url }}">
+<label for="globalProgramSelect" class="program-switcher-label">Program</label>
+<select id="globalProgramSelect" name="program" class="program-switcher-select" onchange="this.form.submit()">
+{% for program in program_options %}
+<option value="{{ program }}" {% if selected_program == program %}selected{% endif %}>{{ program }}</option>
+{% endfor %}
+</select>
+</form>
+{% endif %}
+
 <!-- NOTIFICATION -->
 
 <div class="notification-wrapper">

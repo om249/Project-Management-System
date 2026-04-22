@@ -1,4 +1,4 @@
-from flask import Flask, current_app, redirect, url_for, flash
+from flask import Flask, current_app, redirect, url_for, flash, session
 from flask_login import LoginManager, current_user
 from flask_bcrypt import Bcrypt
 from flask_mail import Mail
@@ -45,9 +45,52 @@ def create_app():
 
     @app.context_processor
     def inject_notifications():
-        def normalize_designation(record):
+        def normalize_program(value):
+            normalized = str(value or "").strip().upper()
+            return normalized if normalized in {"MCA", "MBA"} else "MCA"
+
+        def get_program_scope(record):
+            if not record:
+                return None
+            assignments = list(
+                current_app.db.role_assignments.find({"user_id": record["_id"]})
+            )
+            if assignments:
+                if any(item.get("role") == "director" for item in assignments):
+                    return None
+                if any(item.get("role") == "academic_coordinator" for item in assignments):
+                    return None
+                scoped_role = next(
+                    (
+                        item for item in assignments
+                        if item.get("program") and item.get("role") in {"project_coordinator", "hod"}
+                    ),
+                    None
+                )
+                if scoped_role:
+                    return normalize_program(scoped_role.get("program"))
+            program = str(record.get("program") or "").strip().upper()
+            return normalize_program(program) if program in {"MCA", "MBA"} else None
+
+        def normalize_designation(record, selected_program):
             if not record:
                 return "faculty"
+
+            assignments = list(
+                current_app.db.role_assignments.find({"user_id": record["_id"]})
+            )
+            if assignments:
+                for item in assignments:
+                    if item.get("role") == "director":
+                        return "director"
+                for item in assignments:
+                    if item.get("role") == "academic_coordinator":
+                        return "academic_coordinator"
+                for item in assignments:
+                    if item.get("program") == selected_program and item.get("role") in {"project_coordinator", "hod"}:
+                        return item.get("role")
+                return "faculty"
+
             designation = str(record.get("designation") or "").strip().lower().replace(" ", "_")
             if designation in {"director", "project_coordinator", "academic_coordinator", "hod", "faculty"}:
                 return designation
@@ -75,9 +118,20 @@ def create_app():
             can_view_student_directory = False
             can_access_mentor_tools = False
 
+            selected_program = str(session.get("selected_program", "MCA")).strip().upper()
+            if selected_program not in {"MCA", "MBA"}:
+                selected_program = "MCA"
+            session["selected_program"] = selected_program
+            can_switch_program = True
+
             if current_user.role in ["admin", "faculty"]:
                 current_user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
-                current_designation = normalize_designation(current_user_record)
+                locked_program = get_program_scope(current_user_record)
+                if locked_program:
+                    selected_program = locked_program
+                    session["selected_program"] = selected_program
+                    can_switch_program = False
+                current_designation = normalize_designation(current_user_record, selected_program)
                 can_manage_designations = current_designation == "director"
                 can_manage_operations = current_designation in {"project_coordinator"}
                 can_view_reports = current_designation in {"director", "project_coordinator", "academic_coordinator", "hod"}
@@ -98,7 +152,10 @@ def create_app():
                 can_manage_operations=can_manage_operations,
                 can_view_reports=can_view_reports,
                 can_view_student_directory=can_view_student_directory,
-                can_access_mentor_tools=can_access_mentor_tools
+                can_access_mentor_tools=can_access_mentor_tools,
+                selected_program=selected_program,
+                can_switch_program=can_switch_program,
+                program_options=["MCA", "MBA"]
             )
 
         return dict(
@@ -111,7 +168,10 @@ def create_app():
             can_manage_operations=False,
             can_view_reports=False,
             can_view_student_directory=False,
-            can_access_mentor_tools=False
+            can_access_mentor_tools=False,
+            selected_program="MCA",
+            can_switch_program=False,
+            program_options=["MCA", "MBA"]
         )
 
     @app.errorhandler(403)
@@ -121,11 +181,30 @@ def create_app():
 
             if current_user.role in {"admin", "faculty"}:
                 user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
+                selected_program = str(session.get("selected_program", "MCA")).strip().upper()
+                if selected_program not in {"MCA", "MBA"}:
+                    selected_program = "MCA"
                 designation = "faculty"
                 if user_record:
-                    designation = str(user_record.get("designation") or "").strip().lower().replace(" ", "_")
-                    if designation not in {"director", "project_coordinator", "academic_coordinator", "hod", "faculty"}:
-                        designation = "director" if user_record.get("role") == "admin" else "faculty"
+                    assignments = list(current_app.db.role_assignments.find({"user_id": user_record["_id"]}))
+                    if assignments:
+                        if any(item.get("role") == "director" for item in assignments):
+                            designation = "director"
+                        elif any(item.get("role") == "academic_coordinator" for item in assignments):
+                            designation = "academic_coordinator"
+                        else:
+                            scoped = next(
+                                (
+                                    item for item in assignments
+                                    if item.get("program") == selected_program and item.get("role") in {"project_coordinator", "hod"}
+                                ),
+                                None
+                            )
+                            designation = scoped.get("role") if scoped else "faculty"
+                    else:
+                        designation = str(user_record.get("designation") or "").strip().lower().replace(" ", "_")
+                        if designation not in {"director", "project_coordinator", "academic_coordinator", "hod", "faculty"}:
+                            designation = "director" if user_record.get("role") == "admin" else "faculty"
 
                 if designation == "director":
                     return redirect(url_for("admin.director_dashboard"))

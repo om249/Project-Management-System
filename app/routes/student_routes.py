@@ -83,26 +83,43 @@ def save_final_project_archive(file_storage, student_id):
 
 
 def _leadership_users(exclude_ids=None):
+    return _leadership_users_for_program(program=None, exclude_ids=exclude_ids)
+
+
+def _leadership_users_for_program(program=None, exclude_ids=None):
     exclude_ids = {str(item) for item in (exclude_ids or []) if item}
-    target_designations = {
-        "director",
-        "project_coordinator",
-        "academic_coordinator",
-        "hod"
-    }
+    scoped_program = str(program or "MCA").strip().upper()
+    if scoped_program not in {"MCA", "MBA"}:
+        scoped_program = "MCA"
+
+    assignments = list(
+        current_app.db.role_assignments.find(
+            {
+                "$or": [
+                    {"role": "director"},
+                    {"role": "academic_coordinator", "program": {"$exists": False}},
+                    {"role": "academic_coordinator", "program": scoped_program},
+                    {"role": {"$in": ["project_coordinator", "hod"]}, "program": scoped_program}
+                ]
+            }
+        )
+    )
+    user_ids = [entry.get("user_id") for entry in assignments if entry.get("user_id")]
+    if not user_ids:
+        return []
     users = list(
         current_app.db.users.find(
             {
-                "role": {"$in": ["admin", "faculty"]},
-                "designation": {"$in": list(target_designations)}
+                "_id": {"$in": user_ids},
+                "role": {"$in": ["admin", "faculty"]}
             }
         )
     )
     return [user for user in users if str(user.get("_id")) not in exclude_ids]
 
 
-def notify_leadership(message, email_subject=None, email_html=None, exclude_ids=None):
-    recipients = _leadership_users(exclude_ids=exclude_ids)
+def notify_leadership(message, email_subject=None, email_html=None, exclude_ids=None, program=None):
+    recipients = _leadership_users_for_program(program=program, exclude_ids=exclude_ids)
     notified = set()
     emailed = set()
 
@@ -541,6 +558,9 @@ def upload_stage(stage_id):
     stage_name = stage["name"]
 
     batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
+    batch_program = str((batch or {}).get("program") or (student or {}).get("program") or "MCA").strip().upper()
+    if batch_program not in {"MCA", "MBA"}:
+        batch_program = "MCA"
     faculty_id = batch.get("mentor_id")
 
     if faculty_id:
@@ -572,7 +592,8 @@ def upload_stage(stage_id):
         leadership_message,
         email_subject="New Submission Alert",
         email_html=submission_email(student_name, stage_name),
-        exclude_ids=[faculty_id] if faculty_id else None
+        exclude_ids=[faculty_id] if faculty_id else None,
+        program=batch_program
     )
 
     # -------- LATE SUBMISSION --------
@@ -602,7 +623,8 @@ def upload_stage(stage_id):
             late_message,
             email_subject="Late Submission Alert",
             email_html=late_submission_email(student_name, stage_name),
-            exclude_ids=list(notified_user_ids)
+            exclude_ids=list(notified_user_ids),
+            program=batch_program
         )
 
     # Return JSON for AJAX
@@ -624,6 +646,9 @@ def final_project_submission():
 
     student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
     batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student.get("batch_id") else None
+    batch_program = str((batch or {}).get("program") or (student or {}).get("program") or "MCA").strip().upper()
+    if batch_program not in {"MCA", "MBA"}:
+        batch_program = "MCA"
 
     title = request.form.get("title", "").strip()
     description = request.form.get("description", "").strip()
@@ -721,7 +746,8 @@ def final_project_submission():
         notification_message,
         email_subject="Final Project Submission",
         email_html=final_project_submission_email(student_name, title),
-        exclude_ids=[mentor_id] if mentor_id else None
+        exclude_ids=[mentor_id] if mentor_id else None,
+        program=batch_program
     )
 
     flash("Final project submitted successfully.", "success")

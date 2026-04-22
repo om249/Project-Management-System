@@ -8,7 +8,7 @@ from functools import wraps
 
 from numpy import rint
 import pandas as pd
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify, session
 from flask import send_file
 from flask_login import login_required, current_user
 from bson.objectid import ObjectId
@@ -27,6 +27,52 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 SESSION_NAME_PATTERN = re.compile(r"^\d{4}-\d{2}$")
 EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+PROGRAM_OPTIONS = {"MCA", "MBA"}
+DEFAULT_PROGRAM = "MCA"
+
+
+def get_current_program():
+    selected = str(session.get("selected_program", DEFAULT_PROGRAM)).strip().upper()
+    if selected not in PROGRAM_OPTIONS:
+        selected = DEFAULT_PROGRAM
+    if current_user.is_authenticated and getattr(current_user, "role", None) in {"admin", "faculty"}:
+        user = get_staff_user()
+        locked_program = get_user_program_scope(user)
+        if locked_program:
+            selected = locked_program
+    session["selected_program"] = selected
+    return selected
+
+
+def program_filter_query(program=None):
+    selected = (program or get_current_program()).strip().upper()
+    if selected == "MCA":
+        return {"$or": [{"program": "MCA"}, {"program": {"$exists": False}}]}
+    return {"program": selected}
+
+
+def with_program_scope(query, program=None):
+    base_query = query or {}
+    return {
+        "$and": [
+            base_query,
+            program_filter_query(program)
+        ]
+    }
+
+
+def user_program_filter_query(program=None):
+    selected = (program or get_current_program()).strip().upper()
+    if selected == "MCA":
+        return {
+            "$or": [
+                {"program": "MCA"},
+                {"program": {"$exists": False}},
+                {"program": None},
+                {"program": ""}
+            ]
+        }
+    return {"program": selected}
 
 
 def is_valid_session_name(value):
@@ -111,22 +157,31 @@ def save_progress_document(file_storage, session_id):
 def notify_progress_document_recipients(session, stage, document_name, is_reupload=False):
     action_label = "reuploaded" if is_reupload else "uploaded"
     message = f"{stage['name']} reference document has been {action_label} for {session['name']}."
+    scoped_program = normalize_program(stage.get("program") or DEFAULT_PROGRAM)
 
     session_batches = list(current_app.db.batches.find(
-        {"session_id": session["_id"]},
+        {"session_id": session["_id"], **program_filter_query(scoped_program)},
         {"_id": 1}
     ))
     batch_ids = [batch["_id"] for batch in session_batches]
 
     students = list(current_app.db.students.find({
-        "$or": [
-            {"session_id": session["_id"]},
-            {"batch_id": {"$in": batch_ids}}
+        "$and": [
+            {
+                "$or": [
+                    {"session_id": session["_id"]},
+                    {"batch_id": {"$in": batch_ids}}
+                ]
+            },
+            program_filter_query(scoped_program)
         ]
     }))
     faculty_members = list(current_app.db.users.find({
-        "role": {"$in": ["faculty", "admin"]}
+        "role": {"$in": ["faculty", "admin"]},
+        **user_program_filter_query(scoped_program)
     }))
+    leadership_members = get_program_leadership_users(scoped_program)
+    leadership_ids = {str(item["_id"]) for item in leadership_members}
 
     for student in students:
         create_notification(student["_id"], message, "document")
@@ -147,6 +202,8 @@ def notify_progress_document_recipients(session, stage, document_name, is_reuplo
                 print("Progress document student email error:", e)
 
     for faculty in faculty_members:
+        if str(faculty["_id"]) in leadership_ids:
+            continue
         create_notification(faculty["_id"], message, "document")
         if faculty.get("email"):
             try:
@@ -163,6 +220,24 @@ def notify_progress_document_recipients(session, stage, document_name, is_reuplo
                 )
             except Exception as e:
                 print("Progress document faculty email error:", e)
+
+    for leader in leadership_members:
+        create_notification(leader["_id"], message, "document")
+        if leader.get("email"):
+            try:
+                send_email(
+                    leader["email"],
+                    f"Progress Report Document {action_label.title()}",
+                    progress_document_email(
+                        leader.get("name", "Leadership"),
+                        stage["name"],
+                        session["name"],
+                        document_name,
+                        action_label
+                    )
+                )
+            except Exception as e:
+                print("Progress document leadership email error:", e)
 
 
 def ensure_progress_document_preview(document):
@@ -209,6 +284,8 @@ DESIGNATION_PROJECT_COORDINATOR = "project_coordinator"
 DESIGNATION_ACADEMIC_COORDINATOR = "academic_coordinator"
 DESIGNATION_HOD = "hod"
 DESIGNATION_FACULTY = "faculty"
+PROGRAM_SCOPED_DESIGNATIONS = {DESIGNATION_PROJECT_COORDINATOR, DESIGNATION_HOD}
+GLOBAL_DESIGNATIONS = {DESIGNATION_DIRECTOR, DESIGNATION_ACADEMIC_COORDINATOR}
 
 STAFF_DESIGNATIONS = {
     DESIGNATION_DIRECTOR,
@@ -224,31 +301,217 @@ def normalize_designation(value):
     return normalized if normalized in STAFF_DESIGNATIONS else DESIGNATION_FACULTY
 
 
+def normalize_program(value):
+    normalized = str(value or "").strip().upper()
+    return normalized if normalized in PROGRAM_OPTIONS else DEFAULT_PROGRAM
+
+
+def _role_assignments_collection():
+    return current_app.db.role_assignments
+
+
+def get_program_leadership_users(program=None, exclude_ids=None):
+    scoped_program = normalize_program(program or get_current_program())
+    excluded = {str(item) for item in (exclude_ids or []) if item}
+    assignments = list(
+        _role_assignments_collection().find({
+            "$or": [
+                {"role": DESIGNATION_DIRECTOR},
+                {"role": DESIGNATION_ACADEMIC_COORDINATOR, "program": {"$exists": False}},
+                {"role": DESIGNATION_ACADEMIC_COORDINATOR, "program": scoped_program},
+                {"role": {"$in": [DESIGNATION_PROJECT_COORDINATOR, DESIGNATION_HOD]}, "program": scoped_program}
+            ]
+        })
+    )
+    user_ids = [item.get("user_id") for item in assignments if item.get("user_id")]
+    if not user_ids:
+        return []
+    users = list(current_app.db.users.find({"_id": {"$in": user_ids}, "role": {"$in": ["admin", "faculty"]}}))
+    return [user for user in users if str(user.get("_id")) not in excluded]
+
+
+def _bootstrap_role_assignments(staff):
+    collection = _role_assignments_collection()
+    if collection.count_documents({}) > 0 or not staff:
+        return
+
+    director = next((user for user in staff if normalize_designation(user.get("designation")) == DESIGNATION_DIRECTOR), None)
+    if not director:
+        director = next((user for user in staff if user.get("role") == "admin" and user.get("can_manage_admins")), None)
+    if not director:
+        director = next((user for user in staff if user.get("role") == "admin"), None)
+    if not director:
+        director = staff[0]
+
+    collection.insert_one({
+        "role": DESIGNATION_DIRECTOR,
+        "user_id": director["_id"],
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    })
+
+    ac = next(
+        (
+            user for user in staff
+            if user["_id"] != director["_id"] and normalize_designation(user.get("designation")) == DESIGNATION_ACADEMIC_COORDINATOR
+        ),
+        None
+    )
+    if ac:
+        collection.insert_one({
+            "role": DESIGNATION_ACADEMIC_COORDINATOR,
+            "user_id": ac["_id"],
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
+
+    legacy_pc = next(
+        (
+            user for user in staff
+            if user["_id"] != director["_id"] and normalize_designation(user.get("designation")) == DESIGNATION_PROJECT_COORDINATOR
+        ),
+        None
+    )
+    if legacy_pc:
+        collection.insert_one({
+            "role": DESIGNATION_PROJECT_COORDINATOR,
+            "program": DEFAULT_PROGRAM,
+            "user_id": legacy_pc["_id"],
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
+
+    legacy_hod = next(
+        (
+            user for user in staff
+            if user["_id"] != director["_id"] and normalize_designation(user.get("designation")) == DESIGNATION_HOD
+        ),
+        None
+    )
+    if legacy_hod:
+        collection.insert_one({
+            "role": DESIGNATION_HOD,
+            "program": DEFAULT_PROGRAM,
+            "user_id": legacy_hod["_id"],
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
+
+
 def get_staff_user(user_id=None):
     target_id = user_id or current_user.id
     return current_app.db.users.find_one({"_id": ObjectId(target_id)})
 
 
-def get_user_designation(user):
+def _get_user_role_profile(user):
+    program_roles = {program: DESIGNATION_FACULTY for program in PROGRAM_OPTIONS}
+    profile = {
+        "is_director": False,
+        "is_ac": False,
+        "program_scope": None,
+        "program_roles": program_roles
+    }
+    if not user:
+        return profile
+
+    assignments = list(
+        _role_assignments_collection().find({"user_id": user["_id"]})
+    )
+    if not assignments:
+        legacy = normalize_designation(user.get("designation"))
+        if legacy == DESIGNATION_DIRECTOR:
+            profile["is_director"] = True
+        elif legacy == DESIGNATION_ACADEMIC_COORDINATOR:
+            profile["is_ac"] = True
+        elif legacy in PROGRAM_SCOPED_DESIGNATIONS:
+            profile["program_roles"][DEFAULT_PROGRAM] = legacy
+            profile["program_scope"] = DEFAULT_PROGRAM
+        elif legacy == DESIGNATION_FACULTY:
+            legacy_program = str(user.get("program") or "").strip().upper()
+            if legacy_program in PROGRAM_OPTIONS:
+                profile["program_scope"] = legacy_program
+        return profile
+
+    for assignment in assignments:
+        role = normalize_designation(assignment.get("role"))
+        program = assignment.get("program")
+        if role == DESIGNATION_DIRECTOR:
+            profile["is_director"] = True
+        elif role == DESIGNATION_ACADEMIC_COORDINATOR:
+            profile["is_ac"] = True
+        elif role in PROGRAM_SCOPED_DESIGNATIONS and program:
+            normalized_program = normalize_program(program)
+            profile["program_roles"][normalized_program] = role
+            profile["program_scope"] = normalized_program
+
+    if not profile["program_scope"]:
+        user_program = str(user.get("program") or "").strip().upper()
+        if user_program in PROGRAM_OPTIONS:
+            profile["program_scope"] = user_program
+
+    return profile
+
+
+def get_user_designation(user, program=None):
     if not user:
         return DESIGNATION_FACULTY
-    return normalize_designation(user.get("designation"))
+    effective_program = normalize_program(program or session.get("selected_program", DEFAULT_PROGRAM))
+    role_profile = _get_user_role_profile(user)
+    if role_profile["is_director"]:
+        return DESIGNATION_DIRECTOR
+    if role_profile["is_ac"]:
+        return DESIGNATION_ACADEMIC_COORDINATOR
+    scoped_designation = role_profile["program_roles"].get(effective_program, DESIGNATION_FACULTY)
+    if scoped_designation in PROGRAM_SCOPED_DESIGNATIONS:
+        return scoped_designation
+    scoped_program = role_profile.get("program_scope")
+    if scoped_program and scoped_program == effective_program:
+        return DESIGNATION_FACULTY
+    return DESIGNATION_FACULTY
 
 
-def is_director(user):
-    return get_user_designation(user) == DESIGNATION_DIRECTOR
+def get_user_program_scope(user):
+    if not user:
+        return None
+    role_profile = _get_user_role_profile(user)
+    if role_profile["is_director"]:
+        return None
+    if role_profile["is_ac"]:
+        return None
+    return role_profile.get("program_scope")
 
 
-def is_project_coordinator(user):
-    return get_user_designation(user) == DESIGNATION_PROJECT_COORDINATOR
+def get_user_role_display_label(user):
+    role_profile = _get_user_role_profile(user)
+    if role_profile["is_director"]:
+        return "Director"
+    if role_profile["is_ac"]:
+        return "AC"
+
+    for program in sorted(PROGRAM_OPTIONS):
+        role_name = role_profile["program_roles"].get(program)
+        if role_name in PROGRAM_SCOPED_DESIGNATIONS:
+            short = "PC" if role_name == DESIGNATION_PROJECT_COORDINATOR else "HOD"
+            return f"{program} {short}"
+
+    scoped_program = role_profile.get("program_scope")
+    return f"{scoped_program} Faculty" if scoped_program else "Faculty"
 
 
-def can_manage_operations(user):
-    return get_user_designation(user) in {DESIGNATION_PROJECT_COORDINATOR}
+def is_director(user, program=None):
+    return get_user_designation(user, program) == DESIGNATION_DIRECTOR
 
 
-def can_view_reports(user):
-    return get_user_designation(user) in {
+def is_project_coordinator(user, program=None):
+    return get_user_designation(user, program) == DESIGNATION_PROJECT_COORDINATOR
+
+
+def can_manage_operations(user, program=None):
+    return get_user_designation(user, program) in {DESIGNATION_PROJECT_COORDINATOR}
+
+
+def can_view_reports(user, program=None):
+    return get_user_designation(user, program) in {
         DESIGNATION_DIRECTOR,
         DESIGNATION_PROJECT_COORDINATOR,
         DESIGNATION_ACADEMIC_COORDINATOR,
@@ -256,8 +519,8 @@ def can_view_reports(user):
     }
 
 
-def can_view_all_students(user):
-    return get_user_designation(user) in {
+def can_view_all_students(user, program=None):
+    return get_user_designation(user, program) in {
         DESIGNATION_DIRECTOR,
         DESIGNATION_PROJECT_COORDINATOR,
         DESIGNATION_ACADEMIC_COORDINATOR,
@@ -329,7 +592,12 @@ def designation_label(designation):
         DESIGNATION_HOD: "HOD",
         DESIGNATION_FACULTY: "Faculty"
     }
-    return mapping.get(normalize_designation(designation), "Faculty")
+    normalized = normalize_designation(designation)
+    if normalized in mapping:
+        return mapping[normalized]
+    if designation:
+        return str(designation)
+    return "Faculty"
 
 
 def send_designation_update_email(user_record, new_designation, previous_designation=None):
@@ -359,76 +627,36 @@ def ensure_admin_access_state():
     if not staff:
         return []
 
-    director = next((user for user in staff if normalize_designation(user.get("designation")) == DESIGNATION_DIRECTOR), None)
-    if not director:
-        director = next((user for user in staff if user.get("role") == "admin" and user.get("can_manage_admins")), None)
-    if not director:
-        director = next((user for user in staff if user.get("role") == "admin"), None)
-    if not director:
-        director = staff[0]
-
-    project_coordinators = [
-        user for user in staff
-        if normalize_designation(user.get("designation")) == DESIGNATION_PROJECT_COORDINATOR
-    ]
-    if not project_coordinators:
-        legacy_pc = next((user for user in staff if user.get("is_project_coordinator")), None)
-        if legacy_pc and str(legacy_pc["_id"]) != str(director["_id"]):
-            project_coordinators = [legacy_pc]
-
-    chosen_pc = next((user for user in project_coordinators if str(user["_id"]) != str(director["_id"])), None)
-    chosen_ac = next(
-        (
-            user for user in staff
-            if normalize_designation(user.get("designation")) == DESIGNATION_ACADEMIC_COORDINATOR
-            and str(user["_id"]) != str(director["_id"])
-            and (not chosen_pc or str(user["_id"]) != str(chosen_pc["_id"]))
-        ),
-        None
-    )
-    chosen_hod = next(
-        (
-            user for user in staff
-            if normalize_designation(user.get("designation")) == DESIGNATION_HOD
-            and str(user["_id"]) != str(director["_id"])
-            and (not chosen_pc or str(user["_id"]) != str(chosen_pc["_id"]))
-            and (not chosen_ac or str(user["_id"]) != str(chosen_ac["_id"]))
-        ),
-        None
-    )
+    _bootstrap_role_assignments(staff)
+    ac_assignments = list(_role_assignments_collection().find({"role": DESIGNATION_ACADEMIC_COORDINATOR}))
+    if ac_assignments:
+        preferred_ac = next((item for item in ac_assignments if not item.get("program")), ac_assignments[0])
+        preferred_user_id = preferred_ac.get("user_id")
+        _role_assignments_collection().delete_many({"role": DESIGNATION_ACADEMIC_COORDINATOR})
+        if preferred_user_id:
+            _role_assignments_collection().insert_one({
+                "role": DESIGNATION_ACADEMIC_COORDINATOR,
+                "user_id": preferred_user_id,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            })
+    director_assignment = _role_assignments_collection().find_one({"role": DESIGNATION_DIRECTOR})
+    director = None
+    if director_assignment and director_assignment.get("user_id"):
+        director = current_app.db.users.find_one({"_id": director_assignment["user_id"]})
 
     for user in staff:
-        desired_role = "faculty"
-        desired_designation = DESIGNATION_FACULTY
-        desired_can_manage_admins = False
-        desired_is_pc = False
-
-        if str(user["_id"]) == str(director["_id"]):
-            desired_role = "admin"
-            desired_designation = DESIGNATION_DIRECTOR
-            desired_can_manage_admins = True
-        elif chosen_pc and str(user["_id"]) == str(chosen_pc["_id"]):
-            desired_designation = DESIGNATION_PROJECT_COORDINATOR
-            desired_is_pc = True
-        elif chosen_ac and str(user["_id"]) == str(chosen_ac["_id"]):
-            desired_designation = DESIGNATION_ACADEMIC_COORDINATOR
-        elif chosen_hod and str(user["_id"]) == str(chosen_hod["_id"]):
-            desired_designation = DESIGNATION_HOD
-        else:
-            desired_designation = DESIGNATION_FACULTY
-
-        update_data = {}
-        if user.get("role") != desired_role:
-            update_data["role"] = desired_role
-        if normalize_designation(user.get("designation")) != desired_designation:
-            update_data["designation"] = desired_designation
-        if bool(user.get("can_manage_admins")) != desired_can_manage_admins:
-            update_data["can_manage_admins"] = desired_can_manage_admins
-        if bool(user.get("is_project_coordinator")) != desired_is_pc:
-            update_data["is_project_coordinator"] = desired_is_pc
-
-        if update_data:
-            current_app.db.users.update_one({"_id": user["_id"]}, {"$set": update_data})
+        is_current_director = bool(director and str(user["_id"]) == str(director["_id"]))
+        scoped_program = get_user_program_scope(user) or DEFAULT_PROGRAM
+        compatible_designation = get_user_designation(user, scoped_program)
+        update_data = {
+            "role": "admin" if is_current_director else "faculty",
+            "can_manage_admins": is_current_director,
+            "designation": compatible_designation,
+            "is_project_coordinator": compatible_designation == DESIGNATION_PROJECT_COORDINATOR,
+            "program": scoped_program if not is_current_director else None
+        }
+        current_app.db.users.update_one({"_id": user["_id"]}, {"$set": update_data})
 
     return list(
         current_app.db.users.find(
@@ -439,10 +667,10 @@ def ensure_admin_access_state():
 
 def get_director():
     ensure_admin_access_state()
-    return current_app.db.users.find_one(
-        {"role": "admin", "designation": DESIGNATION_DIRECTOR},
-        sort=[("created_at", 1)]
-    )
+    assignment = _role_assignments_collection().find_one({"role": DESIGNATION_DIRECTOR})
+    if assignment and assignment.get("user_id"):
+        return current_app.db.users.find_one({"_id": assignment["user_id"]})
+    return current_app.db.users.find_one({"role": "admin"}, sort=[("created_at", 1)])
 
 
 def current_user_can_manage_admins():
@@ -550,29 +778,20 @@ def transfer_director_access(target_user):
     target_before = current_app.db.users.find_one({"_id": target_user["_id"]})
     now = datetime.utcnow()
 
-    current_app.db.users.update_many(
-        {"role": "admin"},
-        {
-            "$set": {
-                "role": "faculty",
-                "designation": DESIGNATION_FACULTY,
-                "can_manage_admins": False
-            }
-        }
-    )
+    _role_assignments_collection().delete_many({
+        "user_id": target_user["_id"],
+        "role": {"$ne": DESIGNATION_DIRECTOR}
+    })
+    _role_assignments_collection().delete_many({"role": DESIGNATION_DIRECTOR})
+    _role_assignments_collection().insert_one({
+        "role": DESIGNATION_DIRECTOR,
+        "user_id": target_user["_id"],
+        "created_at": now,
+        "updated_at": now
+    })
 
-    current_app.db.users.update_one(
-        {"_id": target_user["_id"]},
-        {
-            "$set": {
-                "role": "admin",
-                "designation": DESIGNATION_DIRECTOR,
-                "can_manage_admins": True,
-                "granted_by": ObjectId(current_user.id),
-                "granted_at": now
-            }
-        }
-    )
+    current_app.db.users.update_many({"role": "admin"}, {"$set": {"role": "faculty", "can_manage_admins": False}})
+    current_app.db.users.update_one({"_id": target_user["_id"]}, {"$set": {"role": "admin", "can_manage_admins": True, "granted_by": ObjectId(current_user.id), "granted_at": now}})
 
     target_after = current_app.db.users.find_one({"_id": target_user["_id"]})
     send_designation_update_email(
@@ -582,6 +801,10 @@ def transfer_director_access(target_user):
     )
 
     if previous_director and str(previous_director["_id"]) != str(target_user["_id"]):
+        _role_assignments_collection().delete_many({
+            "user_id": previous_director["_id"],
+            "role": {"$ne": DESIGNATION_DIRECTOR}
+        })
         current_app.db.users.update_one(
             {"_id": previous_director["_id"]},
             {"$set": {"role": "faculty", "designation": DESIGNATION_FACULTY, "can_manage_admins": False}}
@@ -596,52 +819,78 @@ def transfer_director_access(target_user):
     ensure_admin_access_state()
 
 
-def assign_designation(target_user, designation):
+def assign_designation(target_user, designation, program=None):
     designation = normalize_designation(designation)
     if designation == DESIGNATION_DIRECTOR:
         transfer_director_access(target_user)
         return
 
+    normalized_program = normalize_program(program) if program else None
     target_before = current_app.db.users.find_one({"_id": target_user["_id"]})
-    update_data = {
-        "role": "faculty",
-        "designation": designation,
-        "can_manage_admins": False,
-        "updated_at": datetime.utcnow(),
-        "updated_by": ObjectId(current_user.id)
-    }
-    update_data["is_project_coordinator"] = designation == DESIGNATION_PROJECT_COORDINATOR
+    now = datetime.utcnow()
+    role_collection = _role_assignments_collection()
 
-    displaced_designation = None
-    if designation in {
-        DESIGNATION_PROJECT_COORDINATOR,
-        DESIGNATION_ACADEMIC_COORDINATOR,
-        DESIGNATION_HOD
-    }:
-        displaced_designation = designation
-        displaced_members = list(
-            current_app.db.users.find(
-                {"designation": designation, "_id": {"$ne": target_user["_id"]}}
-            )
-        )
-        current_app.db.users.update_many(
-            {"designation": designation, "_id": {"$ne": target_user["_id"]}},
-            {"$set": {"designation": DESIGNATION_FACULTY, "is_project_coordinator": False}}
-        )
-        for displaced_member in displaced_members:
-            displaced_after = current_app.db.users.find_one({"_id": displaced_member["_id"]})
-            send_designation_update_email(
-                displaced_after,
-                DESIGNATION_FACULTY,
-                displaced_designation
-            )
+    # Single-role model: clear all non-director assignments from this user first.
+    role_collection.delete_many({
+        "user_id": target_user["_id"],
+        "role": {"$ne": DESIGNATION_DIRECTOR}
+    })
 
-    current_app.db.users.update_one({"_id": target_user["_id"]}, {"$set": update_data})
+    if designation == DESIGNATION_FACULTY:
+        if not normalized_program:
+            normalized_program = normalize_program(get_current_program())
+    elif designation == DESIGNATION_ACADEMIC_COORDINATOR:
+        displaced = role_collection.find_one({
+            "role": DESIGNATION_ACADEMIC_COORDINATOR,
+            "user_id": {"$ne": target_user["_id"]}
+        })
+        role_collection.delete_many({"role": DESIGNATION_ACADEMIC_COORDINATOR})
+        role_collection.insert_one({
+            "role": DESIGNATION_ACADEMIC_COORDINATOR,
+            "user_id": target_user["_id"],
+            "created_at": now,
+            "updated_at": now
+        })
+        if displaced:
+            displaced_after = current_app.db.users.find_one({"_id": displaced["user_id"]})
+            send_designation_update_email(displaced_after, DESIGNATION_FACULTY, DESIGNATION_ACADEMIC_COORDINATOR)
+    elif designation in PROGRAM_SCOPED_DESIGNATIONS:
+        if not normalized_program:
+            normalized_program = normalize_program(get_current_program())
+        displaced = role_collection.find_one({
+            "role": designation,
+            "program": normalized_program,
+            "user_id": {"$ne": target_user["_id"]}
+        })
+        role_collection.delete_many({"role": designation, "program": normalized_program})
+        role_collection.insert_one({
+            "role": designation,
+            "program": normalized_program,
+            "user_id": target_user["_id"],
+            "created_at": now,
+            "updated_at": now
+        })
+        if displaced:
+            displaced_after = current_app.db.users.find_one({"_id": displaced["user_id"]})
+            send_designation_update_email(displaced_after, DESIGNATION_FACULTY, designation)
+
+    current_app.db.users.update_one(
+        {"_id": target_user["_id"]},
+        {
+            "$set": {
+                "role": "faculty",
+                "can_manage_admins": False,
+                "program": normalized_program if normalized_program else None,
+                "updated_at": now,
+                "updated_by": ObjectId(current_user.id)
+            }
+        }
+    )
     target_after = current_app.db.users.find_one({"_id": target_user["_id"]})
     send_designation_update_email(
         target_after,
-        designation,
-        get_user_designation(target_before) if target_before else None
+        get_user_role_display_label(target_after),
+        get_user_designation(target_before, normalized_program or DEFAULT_PROGRAM) if target_before else None
     )
     ensure_admin_access_state()
 
@@ -749,13 +998,16 @@ def session_filter(selected_session):
     }
 
 
-def get_faculty_assigned_batch(faculty_id, selected_session_id=None):
+def get_faculty_assigned_batch(faculty_id, selected_session_id=None, selected_program=None):
     sessions, selected_session = get_selected_session(selected_session_id)
     scoped_filter = session_filter(selected_session)
+    program = (selected_program or get_current_program()).upper()
+    program_query = program_filter_query(program)
 
     batch = current_app.db.batches.find_one(
         {
             "mentor_id": faculty_id,
+            **program_query,
             "$or": scoped_filter["$or"]
         },
         sort=[("created_at", -1)]
@@ -763,7 +1015,7 @@ def get_faculty_assigned_batch(faculty_id, selected_session_id=None):
 
     if not batch:
         batch = current_app.db.batches.find_one(
-            {"mentor_id": faculty_id},
+            {"mentor_id": faculty_id, **program_query},
             sort=[("created_at", -1)]
         )
 
@@ -989,6 +1241,25 @@ def activate_academic_session(session_id):
     return redirect(next_url)
 
 
+@admin_bp.route("/set-program", methods=["POST"])
+@login_required
+def set_program_context():
+    user = get_staff_user() if current_user.role in {"admin", "faculty"} else None
+    locked_program = get_user_program_scope(user) if user else None
+
+    if locked_program:
+        session["selected_program"] = locked_program
+    else:
+        selected_program = str(request.form.get("program", DEFAULT_PROGRAM)).strip().upper()
+        if selected_program not in PROGRAM_OPTIONS:
+            flash("Invalid program selected.", "warning")
+        else:
+            session["selected_program"] = selected_program
+
+    next_url = request.form.get("next_url") or request.referrer or url_for("admin.dashboard")
+    return redirect(next_url)
+
+
 # ===================== BATCH MANAGEMENT =====================
 # @admin_bp.route("/batches", methods=["GET", "POST"])
 # @login_required
@@ -1023,6 +1294,7 @@ def activate_academic_session(session_id):
 @login_required
 @operations_access_required
 def manage_batches():
+    selected_program = get_current_program()
     selected_session_id = request.values.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
 
@@ -1031,10 +1303,15 @@ def manage_batches():
 
         if name:
             name = name.strip()
-            existing = current_app.db.batches.find_one({
-                "name": name,
-                "session_id": selected_session["_id"]
-            })
+            existing = current_app.db.batches.find_one(
+                with_program_scope(
+                    {
+                        "name": name,
+                        "session_id": selected_session["_id"]
+                    },
+                    selected_program
+                )
+            )
 
             if existing:
                 flash("Batch already exists.")
@@ -1043,6 +1320,7 @@ def manage_batches():
                     "name": name,
                     "year": selected_session["name"],
                     "session_id": selected_session["_id"],
+                    "program": selected_program,
                     "mentor_id": None,
                     "created_at": datetime.utcnow()
                 })
@@ -1050,30 +1328,26 @@ def manage_batches():
 
         return redirect(url_for("admin.manage_batches", session=str(selected_session["_id"])))
 
-    batches = list(current_app.db.batches.find(session_filter(selected_session)).sort("created_at", -1))
+    batches = list(
+        current_app.db.batches.find(
+            with_program_scope(session_filter(selected_session), selected_program)
+        ).sort("created_at", -1)
+    )
 
     # Get all assigned mentor_ids
-    assigned_mentors = current_app.db.batches.distinct("mentor_id", session_filter(selected_session))
+    assigned_mentors = current_app.db.batches.distinct(
+        "mentor_id",
+        with_program_scope(session_filter(selected_session), selected_program)
+    )
 
     # Remove None if exists
     assigned_mentors = [m for m in assigned_mentors if m]
 
-    # Fetch only faculty NOT assigned
-    faculty = list(current_app.db.users.find({
-    "role": {"$in": ["faculty", "admin"]},
-    "_id": {"$nin": assigned_mentors}
-    })) 
-
-    assigned_mentors = current_app.db.batches.distinct("mentor_id")
-    assigned_mentors = [m for m in assigned_mentors if m]
-
-    faculty = list(current_app.db.users.find({
+    faculty_candidates = list(current_app.db.users.find({
         "role": {"$in": ["faculty", "admin"]},
-        "$or": [
-        {"_id": {"$nin": assigned_mentors}},
-        {"_id": {"$in": assigned_mentors}}
-        ]
-        }))
+        **user_program_filter_query(selected_program)
+    }))
+    faculty = [member for member in faculty_candidates if not is_director(member)]
 
     # Attach mentor name
     for batch in batches:
@@ -1118,9 +1392,16 @@ def assign_mentor():
         return redirect(url_for("admin.manage_batches", **session_query))
 
     # Check if mentor already assigned to another batch
+    mentor_record = current_app.db.users.find_one({"_id": ObjectId(mentor_id)}) if mentor_id and mentor_id != "remove" else None
+    batch_program = (batch.get("program") or DEFAULT_PROGRAM).strip().upper() if batch else DEFAULT_PROGRAM
+    if mentor_record and get_user_program_scope(mentor_record) not in {None, batch_program}:
+        flash("This mentor belongs to a different program.", "warning")
+        return redirect(url_for("admin.manage_batches", **session_query))
+
     already_assigned = current_app.db.batches.find_one({
         "mentor_id": ObjectId(mentor_id),
         "session_id": batch.get("session_id"),
+        "program": batch.get("program"),
         "_id": {"$ne": ObjectId(batch_id)}
     })
 
@@ -1198,6 +1479,7 @@ def delete_batch(batch_id):
 @login_required
 @operations_access_required
 def manage_stages():
+    selected_program = get_current_program()
     selected_session_id = request.values.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
 
@@ -1209,11 +1491,15 @@ def manage_stages():
             flash("Progress Report name cannot be empty.")
             return redirect(url_for("admin.manage_stages", session=str(selected_session["_id"])))
 
-        last_stage = current_app.db.stages.find_one(sort=[("order", -1)])
+        last_stage = current_app.db.stages.find_one(
+            program_filter_query(selected_program),
+            sort=[("order", -1)]
+        )
         next_order = last_stage["order"] + 1 if last_stage else 1
 
         current_app.db.stages.insert_one({
             "name": name,
+            "program": selected_program,
             "order": next_order
         })
 
@@ -1221,7 +1507,7 @@ def manage_stages():
         return redirect(url_for("admin.manage_stages", session=str(selected_session["_id"])))
 
     # -------- GET DATA --------
-    stages = list(current_app.db.stages.find().sort("order", 1))
+    stages = list(current_app.db.stages.find(program_filter_query(selected_program)).sort("order", 1))
 
     deadline_dict = {}
     deadlines = current_app.db.deadlines.find(get_session_deadline_query(selected_session["_id"]))
@@ -1440,7 +1726,11 @@ def delete_stage(stage_id):
 @operations_access_required
 def manage_faculty():
     ensure_admin_access_state()
-    faculty_list = list(current_app.db.users.find({"role": "faculty"}))
+    selected_program = get_current_program()
+    faculty_list = list(current_app.db.users.find({
+        "role": "faculty",
+        **user_program_filter_query(selected_program)
+    }))
     form_data = {"name": "", "email": ""}
 
     if request.method == "POST":
@@ -1480,6 +1770,7 @@ def manage_faculty():
             "password": hashed_password,
             "role": "faculty",
             "designation": DESIGNATION_FACULTY,
+            "program": selected_program,
             "created_at": datetime.utcnow()
         })
 
@@ -1510,15 +1801,21 @@ def manage_admin_access():
 
     staff_rows = []
     for member in staff_members:
-        member_designation = get_user_designation(member)
+        role_profile = _get_user_role_profile(member)
+        global_designation = DESIGNATION_DIRECTOR if role_profile["is_director"] else (DESIGNATION_ACADEMIC_COORDINATOR if role_profile["is_ac"] else None)
+        role_label = get_user_role_display_label(member)
+        mca_designation = role_profile["program_roles"].get("MCA", DESIGNATION_FACULTY)
+        mba_designation = role_profile["program_roles"].get("MBA", DESIGNATION_FACULTY)
         staff_rows.append(
             {
                 "_id": member["_id"],
                 "name": member.get("name", "Not Available"),
                 "email": member.get("email", "Not Available"),
-                "designation": member_designation,
-                "is_director": member_designation == DESIGNATION_DIRECTOR,
-                "is_project_coordinator": member_designation == DESIGNATION_PROJECT_COORDINATOR
+                "role_label": role_label,
+                "global_designation": global_designation,
+                "mca_designation": mca_designation,
+                "mba_designation": mba_designation,
+                "is_director": global_designation == DESIGNATION_DIRECTOR
             }
         )
 
@@ -1532,7 +1829,8 @@ def manage_admin_access():
             DESIGNATION_ACADEMIC_COORDINATOR: "Academic Coordinator",
             DESIGNATION_HOD: "HOD",
             DESIGNATION_FACULTY: "Faculty"
-        }
+        },
+        program_options=sorted(PROGRAM_OPTIONS)
     )
 
 
@@ -1616,6 +1914,8 @@ def demote_admin_user(user_id):
 def set_staff_designation(user_id):
     ensure_admin_access_state()
     designation = normalize_designation(request.form.get("designation"))
+    target_program = request.form.get("program")
+    normalized_program = normalize_program(target_program) if target_program else None
     allowed_designations = {
         DESIGNATION_DIRECTOR,
         DESIGNATION_PROJECT_COORDINATOR,
@@ -1631,6 +1931,10 @@ def set_staff_designation(user_id):
         flash("Invalid designation request.", "warning")
         return redirect(url_for("admin.manage_admin_access"))
 
+    if designation in PROGRAM_SCOPED_DESIGNATIONS and not normalized_program:
+        flash("Program selection is required for program-scoped role changes.", "warning")
+        return redirect(url_for("admin.manage_admin_access"))
+
     if str(target["_id"]) == str(current_user.id) and designation != DESIGNATION_DIRECTOR:
         flash("Transfer Director role first before changing your own designation.", "warning")
         return redirect(url_for("admin.manage_admin_access"))
@@ -1640,7 +1944,7 @@ def set_staff_designation(user_id):
         flash("Director role transferred successfully.", "success")
         return redirect_after_admin_access_change()
 
-    assign_designation(target, designation)
+    assign_designation(target, designation, normalized_program)
     flash("Designation updated successfully.", "success")
     return redirect(url_for("admin.manage_admin_access"))
 
@@ -1655,18 +1959,35 @@ def remove_staff_designation(user_id):
         flash("Selected user was not found.", "danger")
         return redirect(url_for("admin.manage_admin_access"))
 
-    current_designation = get_user_designation(target)
-    removable_designations = {
-        DESIGNATION_PROJECT_COORDINATOR,
-        DESIGNATION_ACADEMIC_COORDINATOR,
-        DESIGNATION_HOD
-    }
-    if current_designation not in removable_designations:
-        flash("This user does not have a removable AC/PC/HOD designation.", "warning")
+    role_to_remove = normalize_designation(request.form.get("designation"))
+    target_program = request.form.get("program")
+    normalized_program = normalize_program(target_program) if target_program else None
+    removable_designations = {DESIGNATION_PROJECT_COORDINATOR, DESIGNATION_ACADEMIC_COORDINATOR, DESIGNATION_HOD}
+    if role_to_remove not in removable_designations:
+        flash("Invalid removal request.", "warning")
+        return redirect(url_for("admin.manage_admin_access"))
+    if role_to_remove in PROGRAM_SCOPED_DESIGNATIONS and not normalized_program:
+        flash("Program is required to remove PC/HOD designation.", "warning")
         return redirect(url_for("admin.manage_admin_access"))
 
-    assign_designation(target, DESIGNATION_FACULTY)
-    flash(f"{designation_label(current_designation)} role removed successfully.", "success")
+    delete_query = {"role": role_to_remove, "user_id": target["_id"]}
+    if role_to_remove in PROGRAM_SCOPED_DESIGNATIONS:
+        delete_query["program"] = normalized_program
+    _role_assignments_collection().delete_many(delete_query)
+    current_app.db.users.update_one(
+        {"_id": target["_id"]},
+        {
+            "$set": {
+                "role": "faculty",
+                "can_manage_admins": False,
+                "program": normalized_program if normalized_program else target.get("program"),
+                "updated_at": datetime.utcnow(),
+                "updated_by": ObjectId(current_user.id)
+            }
+        }
+    )
+    ensure_admin_access_state()
+    flash(f"{designation_label(role_to_remove)} role removed successfully.", "success")
     return redirect(url_for("admin.manage_admin_access"))
 
 
@@ -1811,13 +2132,22 @@ def faculty_dashboard():
 def manage_students():
     user = get_staff_user()
     can_edit_students = can_manage_operations(user)
+    selected_program = get_current_program()
 
     selected_session_id = request.args.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
 
-    students = list(current_app.db.students.find(session_filter(selected_session)).sort("prn", 1))
+    students = list(
+        current_app.db.students.find(
+            with_program_scope(session_filter(selected_session), selected_program)
+        ).sort("prn", 1)
+    )
 
-    batches = list(current_app.db.batches.find(session_filter(selected_session)).sort("created_at", -1))
+    batches = list(
+        current_app.db.batches.find(
+            with_program_scope(session_filter(selected_session), selected_program)
+        ).sort("created_at", -1)
+    )
 
     # Optional: map batch_id → batch name if you still need it elsewhere
     batch_map = {str(batch["_id"]): batch["name"] for batch in batches}
@@ -1900,19 +2230,25 @@ def add_student():
         return redirect(url_for("admin.manage_students"))
 
     batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
+    selected_program = get_current_program()
 
-    if not batch or batch.get("session_id") != session["_id"]:
+    if not batch or batch.get("session_id") != session["_id"] or (batch.get("program") or DEFAULT_PROGRAM) != selected_program:
         flash("Select a batch from the active academic session.", "warning")
         return redirect(url_for("admin.manage_students", session=str(session["_id"])))
 
     existing = current_app.db.students.find_one({
         "prn": prn,
-        "$or": [
-            {"session_id": session["_id"]},
+        "$and": [
             {
-                "session_id": {"$exists": False},
-                "year": session["name"]
-            }
+                "$or": [
+                    {"session_id": session["_id"]},
+                    {
+                        "session_id": {"$exists": False},
+                        "year": session["name"]
+                    }
+                ]
+            },
+            program_filter_query(selected_program)
         ]
     })
 
@@ -1922,12 +2258,17 @@ def add_student():
 
     existing_email = current_app.db.students.find_one({
         "email": email,
-        "$or": [
-            {"session_id": session["_id"]},
+        "$and": [
             {
-                "session_id": {"$exists": False},
-                "year": session["name"]
-            }
+                "$or": [
+                    {"session_id": session["_id"]},
+                    {
+                        "session_id": {"$exists": False},
+                        "year": session["name"]
+                    }
+                ]
+            },
+            program_filter_query(selected_program)
         ]
     })
 
@@ -1951,6 +2292,7 @@ def add_student():
         "year": session["name"],
         "session_id": session["_id"],
         "batch_id": batch["_id"],
+        "program": selected_program,
         "role": "student",
         "password": password,
         "password_changed": False,
@@ -1990,6 +2332,7 @@ def upload_students():
         return redirect(url_for("admin.manage_students"))
 
     session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
+    selected_program = get_current_program()
 
     if not session:
         flash("Selected academic session was not found.", "warning")
@@ -2155,12 +2498,17 @@ def upload_students():
 
         existing = current_app.db.students.find_one({
             "prn": prn,
-            "$or": [
-                {"session_id": session["_id"]},
+            "$and": [
                 {
-                    "session_id": {"$exists": False},
-                    "year": session["name"]
-                }
+                    "$or": [
+                        {"session_id": session["_id"]},
+                        {
+                            "session_id": {"$exists": False},
+                            "year": session["name"]
+                        }
+                    ]
+                },
+                program_filter_query(selected_program)
             ]
         })
 
@@ -2180,6 +2528,7 @@ def upload_students():
             "roll_no": roll_no,
             "year": year,
             "session_id": session["_id"],
+            "program": selected_program,
             "batch_id": None,
             "role": "student",
             "password": password,
@@ -2264,12 +2613,15 @@ def assign_students_page(batch_id):
         flash("Batch not found.", "warning")
         return redirect(url_for("admin.manage_batches"))
 
+    batch_program = (batch.get("program") or DEFAULT_PROGRAM).upper()
+
     students = list(current_app.db.students.find({
         "$and": [
             session_filter({
                 "_id": batch.get("session_id"),
                 "name": batch.get("year")
             }),
+            program_filter_query(batch_program),
             {
                 "$or": [
                     {"batch_id": None},
@@ -2304,6 +2656,7 @@ def save_assigned_students(batch_id):
         flash("Batch not found.", "warning")
         return redirect(url_for("admin.manage_batches"))
 
+    batch_program = (batch.get("program") or DEFAULT_PROGRAM).upper()
     normalized_student_ids = [ObjectId(student_id) for student_id in student_ids]
 
     # remove students already in this batch
@@ -2315,8 +2668,11 @@ def save_assigned_students(batch_id):
     # assign selected students
     for sid in normalized_student_ids:
         current_app.db.students.update_one(
-            {"_id": sid},
-            {"$set": {"batch_id": ObjectId(batch_id)}}
+            {
+                "_id": sid,
+                **program_filter_query(batch_program)
+            },
+            {"$set": {"batch_id": ObjectId(batch_id), "program": batch_program}}
         )
  
     mentor = None
@@ -2814,31 +3170,99 @@ def _safe_mark(value):
         return 0.0
 
 
+EVALUATION_TYPE_PRESENTATION_1 = "presentation1"
+EVALUATION_TYPE_PRESENTATION_2 = "presentation2"
+EVALUATION_TYPES = {EVALUATION_TYPE_PRESENTATION_1, EVALUATION_TYPE_PRESENTATION_2}
+
+
+def _normalize_evaluation_type(value):
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in EVALUATION_TYPES else EVALUATION_TYPE_PRESENTATION_2
+
+
+def _evaluation_type_query(eval_type):
+    eval_type = _normalize_evaluation_type(eval_type)
+    if eval_type == EVALUATION_TYPE_PRESENTATION_2:
+        return {"$or": [{"evaluation_type": EVALUATION_TYPE_PRESENTATION_2}, {"evaluation_type": {"$exists": False}}]}
+    return {"evaluation_type": eval_type}
+
+
+def _sync_shared_fields_from_presentation1(student, session_doc, project_title, synopsis_status):
+    if not student or not session_doc:
+        return
+
+    now = datetime.utcnow()
+    current_app.db.evaluations.update_one(
+        {
+            "student_id": student["_id"],
+            "session_id": session_doc["_id"],
+            **_evaluation_type_query(EVALUATION_TYPE_PRESENTATION_2)
+        },
+        {
+            "$set": {
+                "student_id": student["_id"],
+                "batch_id": student.get("batch_id"),
+                "session_id": session_doc["_id"],
+                "evaluation_type": EVALUATION_TYPE_PRESENTATION_2,
+                "roll_no": student.get("roll_no") or student.get("prn"),
+                "student_name": student.get("name"),
+                "project_title": project_title,
+                "synopsis_status": synopsis_status,
+                "updated_at": now
+            },
+            "$setOnInsert": {
+                "created_at": now,
+                "guide_name": "Not Assigned",
+                "chapter3": 0,
+                "chapter4": 0,
+                "execution_demo": 0,
+                "total": 0,
+                "signature": ""
+            }
+        },
+        upsert=True
+    )
+
+
 def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
+    selected_program = get_current_program()
     students_query = session_filter(selected_session)
     selected_batch = None
 
     if can_edit_evaluation_all(user) or is_director(user):
         if selected_batch_id:
             try:
-                selected_batch = current_app.db.batches.find_one({"_id": ObjectId(selected_batch_id)})
+                selected_batch = current_app.db.batches.find_one({
+                    "_id": ObjectId(selected_batch_id),
+                    **program_filter_query(selected_program)
+                })
             except Exception:
                 selected_batch = None
             if selected_batch:
                 students_query = {
                     "$and": [
                         session_filter(selected_session),
+                        program_filter_query(selected_program),
                         {"batch_id": selected_batch["_id"]}
                     ]
                 }
+            else:
+                students_query = with_program_scope(session_filter(selected_session), selected_program)
+        else:
+            students_query = with_program_scope(session_filter(selected_session), selected_program)
     else:
-        mentor_batch, _, _ = get_faculty_assigned_batch(user["_id"], str(selected_session["_id"]))
+        mentor_batch, _, _ = get_faculty_assigned_batch(
+            user["_id"],
+            str(selected_session["_id"]),
+            selected_program
+        )
         if not mentor_batch:
             return [], [], None
         selected_batch = mentor_batch
         students_query = {
             "$and": [
                 session_filter(selected_session),
+                program_filter_query(selected_program),
                 {"batch_id": mentor_batch["_id"]}
             ]
         }
@@ -2847,7 +3271,11 @@ def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
     if not students:
         students = list(current_app.db.students.find(students_query).sort("prn", 1))
 
-    batches = list(current_app.db.batches.find(session_filter(selected_session)).sort("name", 1))
+    batches = list(
+        current_app.db.batches.find(
+            with_program_scope(session_filter(selected_session), selected_program)
+        ).sort("name", 1)
+    )
     return students, batches, selected_batch
 
 
@@ -2858,6 +3286,7 @@ def evaluation_sheet():
     user = get_staff_user()
     selected_session_id = request.args.get("session")
     selected_batch_id = request.args.get("batch")
+    selected_eval_type = _normalize_evaluation_type(request.args.get("eval_type"))
 
     sessions, selected_session = get_selected_session(selected_session_id)
     students, batches, selected_batch = _evaluation_student_scope(user, selected_session, selected_batch_id)
@@ -2866,7 +3295,8 @@ def evaluation_sheet():
     evaluations = list(
         current_app.db.evaluations.find({
             "student_id": {"$in": student_ids},
-            "session_id": selected_session["_id"]
+            "session_id": selected_session["_id"],
+            **_evaluation_type_query(selected_eval_type)
         })
     ) if student_ids else []
     evaluation_map = {str(item["student_id"]): item for item in evaluations}
@@ -2889,6 +3319,7 @@ def evaluation_sheet():
         selected_session=selected_session,
         batches=batches,
         selected_batch=selected_batch,
+        selected_eval_type=selected_eval_type,
         students=students,
         evaluation_map=evaluation_map,
         guide_map=guide_map,
@@ -2913,15 +3344,21 @@ def save_evaluation_row(student_id):
 
     selected_session_id = request.form.get("session_id")
     selected_batch_id = request.form.get("batch_id")
+    selected_eval_type = _normalize_evaluation_type(request.form.get("eval_type"))
     session_doc = current_app.db.academic_sessions.find_one({"_id": ObjectId(selected_session_id)}) if selected_session_id else None
     if not session_doc:
         flash("Academic session not found.", "warning")
         return redirect(url_for("admin.evaluation_sheet"))
 
+    chapter1 = _safe_mark(request.form.get("chapter1"))
+    chapter2 = _safe_mark(request.form.get("chapter2"))
     chapter3 = _safe_mark(request.form.get("chapter3"))
     chapter4 = _safe_mark(request.form.get("chapter4"))
     execution = _safe_mark(request.form.get("execution_demo"))
-    total = round(chapter3 + chapter4 + execution, 2)
+    if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
+        total = round(chapter1 + chapter2, 2)
+    else:
+        total = round(chapter3 + chapter4 + execution, 2)
 
     synopsis_status = (request.form.get("synopsis_status") or "No").strip().title()
     if synopsis_status not in ["Yes", "No"]:
@@ -2933,17 +3370,24 @@ def save_evaluation_row(student_id):
 
     now = datetime.utcnow()
     current_app.db.evaluations.update_one(
-        {"student_id": student["_id"], "session_id": session_doc["_id"]},
+        {
+            "student_id": student["_id"],
+            "session_id": session_doc["_id"],
+            **_evaluation_type_query(selected_eval_type)
+        },
         {
             "$set": {
                 "student_id": student["_id"],
                 "batch_id": student.get("batch_id"),
                 "session_id": session_doc["_id"],
+                "evaluation_type": selected_eval_type,
                 "roll_no": student.get("roll_no") or student.get("prn"),
                 "student_name": student.get("name"),
                 "guide_name": guide_name or "Not Assigned",
                 "project_title": project_title,
                 "synopsis_status": synopsis_status,
+                "chapter1": chapter1,
+                "chapter2": chapter2,
                 "chapter3": chapter3,
                 "chapter4": chapter4,
                 "execution_demo": execution,
@@ -2958,6 +3402,9 @@ def save_evaluation_row(student_id):
         },
         upsert=True
     )
+
+    if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
+        _sync_shared_fields_from_presentation1(student, session_doc, project_title, synopsis_status)
 
     create_notification(student["_id"], f"Your evaluation sheet was updated. Total: {total}/30")
     if student.get("email"):
@@ -2976,7 +3423,125 @@ def save_evaluation_row(student_id):
             print("Evaluation update email error:", e)
 
     flash("Evaluation row saved.", "success")
-    return redirect(url_for("admin.evaluation_sheet", session=str(session_doc["_id"]), batch=selected_batch_id))
+    return redirect(url_for("admin.evaluation_sheet", session=str(session_doc["_id"]), batch=selected_batch_id, eval_type=selected_eval_type))
+
+
+@admin_bp.route("/evaluation-sheet/save-all", methods=["POST"])
+@login_required
+@evaluation_access_required
+def save_evaluation_sheet():
+    user = get_staff_user()
+    if not (can_edit_evaluation_all(user) or get_user_designation(user) == DESIGNATION_FACULTY):
+        flash("You do not have permission to edit the evaluation sheet.", "danger")
+        return redirect(url_for("admin.evaluation_sheet"))
+
+    selected_session_id = request.form.get("session_id")
+    selected_batch_id = request.form.get("batch_id")
+    selected_eval_type = _normalize_evaluation_type(request.form.get("eval_type"))
+    session_doc = current_app.db.academic_sessions.find_one({"_id": ObjectId(selected_session_id)}) if selected_session_id else None
+    if not session_doc:
+        flash("Academic session not found.", "warning")
+        return redirect(url_for("admin.evaluation_sheet"))
+
+    editable_ids = list(dict.fromkeys(request.form.getlist("editable_rows")))
+    if not editable_ids:
+        flash("No editable rows found. Click Edit on saved rows before saving changes.", "info")
+        return redirect(url_for("admin.evaluation_sheet", session=str(session_doc["_id"]), batch=selected_batch_id, eval_type=selected_eval_type))
+
+    saved_count = 0
+    for student_id in editable_ids:
+        try:
+            student_object_id = ObjectId(student_id)
+        except Exception:
+            continue
+
+        student = current_app.db.students.find_one({"_id": student_object_id})
+        if not student:
+            continue
+
+        if not can_edit_evaluation_student(user, student):
+            continue
+
+        chapter1 = _safe_mark(request.form.get(f"chapter1_{student_id}"))
+        chapter2 = _safe_mark(request.form.get(f"chapter2_{student_id}"))
+        chapter3 = _safe_mark(request.form.get(f"chapter3_{student_id}"))
+        chapter4 = _safe_mark(request.form.get(f"chapter4_{student_id}"))
+        execution = _safe_mark(request.form.get(f"execution_demo_{student_id}"))
+        if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
+            total = round(chapter1 + chapter2, 2)
+        else:
+            total = round(chapter3 + chapter4 + execution, 2)
+
+        synopsis_status = (request.form.get(f"synopsis_status_{student_id}") or "No").strip().title()
+        if synopsis_status not in ["Yes", "No"]:
+            synopsis_status = "No"
+
+        guide_name = (request.form.get(f"guide_name_{student_id}") or "").strip()
+        project_title = (request.form.get(f"project_title_{student_id}") or "").strip()
+        signature = (request.form.get(f"signature_{student_id}") or "").strip()
+
+        now = datetime.utcnow()
+        current_app.db.evaluations.update_one(
+            {
+                "student_id": student["_id"],
+                "session_id": session_doc["_id"],
+                **_evaluation_type_query(selected_eval_type)
+            },
+            {
+                "$set": {
+                    "student_id": student["_id"],
+                    "batch_id": student.get("batch_id"),
+                    "session_id": session_doc["_id"],
+                    "evaluation_type": selected_eval_type,
+                    "roll_no": student.get("roll_no") or student.get("prn"),
+                    "student_name": student.get("name"),
+                    "guide_name": guide_name or "Not Assigned",
+                    "project_title": project_title,
+                    "synopsis_status": synopsis_status,
+                    "chapter1": chapter1,
+                    "chapter2": chapter2,
+                    "chapter3": chapter3,
+                    "chapter4": chapter4,
+                    "execution_demo": execution,
+                    "total": total,
+                    "signature": signature,
+                    "updated_by": ObjectId(current_user.id),
+                    "updated_at": now
+                },
+                "$setOnInsert": {
+                    "created_at": now
+                }
+            },
+            upsert=True
+        )
+
+        if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
+            _sync_shared_fields_from_presentation1(student, session_doc, project_title, synopsis_status)
+
+        create_notification(student["_id"], f"Your evaluation sheet was updated. Total: {total}/30")
+        if student.get("email"):
+            try:
+                send_email(
+                    student["email"],
+                    "Evaluation Sheet Updated",
+                    evaluation_update_email(
+                        student.get("name", "Student"),
+                        user.get("name", "Evaluator"),
+                        total,
+                        "updated"
+                    )
+                )
+            except Exception as e:
+                print("Evaluation update email error:", e)
+
+        saved_count += 1
+
+    if saved_count:
+        flash(f"Evaluation sheet saved for {saved_count} student(s).", "success")
+    else:
+        flash("No rows were saved. Check access scope or selected rows.", "warning")
+
+    return redirect(url_for("admin.evaluation_sheet", session=str(session_doc["_id"]), batch=selected_batch_id, eval_type=selected_eval_type))
 
 
 @admin_bp.route("/evaluation-sheet/delete/<student_id>", methods=["POST"])
@@ -2995,6 +3560,7 @@ def delete_evaluation_row(student_id):
 
     selected_session_id = request.form.get("session_id")
     selected_batch_id = request.form.get("batch_id")
+    selected_eval_type = _normalize_evaluation_type(request.form.get("eval_type"))
     session_doc = current_app.db.academic_sessions.find_one({"_id": ObjectId(selected_session_id)}) if selected_session_id else None
     if not session_doc:
         flash("Academic session not found.", "warning")
@@ -3002,11 +3568,12 @@ def delete_evaluation_row(student_id):
 
     current_app.db.evaluations.delete_one({
         "student_id": student["_id"],
-        "session_id": session_doc["_id"]
+        "session_id": session_doc["_id"],
+        **_evaluation_type_query(selected_eval_type)
     })
 
     flash("Evaluation row removed.", "success")
-    return redirect(url_for("admin.evaluation_sheet", session=str(session_doc["_id"]), batch=selected_batch_id))
+    return redirect(url_for("admin.evaluation_sheet", session=str(session_doc["_id"]), batch=selected_batch_id, eval_type=selected_eval_type))
 
 
 @admin_bp.route("/evaluation-sheet/export")
@@ -3016,6 +3583,7 @@ def export_evaluation_sheet():
     user = get_staff_user()
     selected_session_id = request.args.get("session")
     selected_batch_id = request.args.get("batch")
+    selected_eval_type = _normalize_evaluation_type(request.args.get("eval_type"))
     sessions, selected_session = get_selected_session(selected_session_id)
     _ = sessions
 
@@ -3024,7 +3592,8 @@ def export_evaluation_sheet():
     evaluations = list(
         current_app.db.evaluations.find({
             "student_id": {"$in": student_ids},
-            "session_id": selected_session["_id"]
+            "session_id": selected_session["_id"],
+            **_evaluation_type_query(selected_eval_type)
         })
     ) if student_ids else []
     evaluation_map = {str(item["student_id"]): item for item in evaluations}
@@ -3040,19 +3609,33 @@ def export_evaluation_sheet():
                 if mentor:
                     guide_name = mentor.get("name", "Not Assigned")
 
-        rows.append({
-            "SN": idx,
-            "Roll Number": student.get("roll_no") or student.get("prn"),
-            "Student Name": student.get("name", ""),
-            "Guide Name": guide_name,
-            "Project Title": evaluation.get("project_title", ""),
-            "Synopsis Submission Status (Yes/No)": evaluation.get("synopsis_status", "No"),
-            "Chapter 3 (10)": evaluation.get("chapter3", 0),
-            "Chapter 4 (10)": evaluation.get("chapter4", 0),
-            "Project execution/demo/github link (10)": evaluation.get("execution_demo", 0),
-            "Total (30)": evaluation.get("total", 0),
-            "Signature": evaluation.get("signature", "")
-        })
+        if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
+            rows.append({
+                "SN": idx,
+                "Roll Number": student.get("roll_no") or student.get("prn"),
+                "Student Name": student.get("name", ""),
+                "Guide Name": guide_name,
+                "Project Title": evaluation.get("project_title", ""),
+                "Synopsis Submission Status (Yes/No)": evaluation.get("synopsis_status", "No"),
+                "Chapter 1 (10)": evaluation.get("chapter1", 0),
+                "Chapter 2 (10)": evaluation.get("chapter2", 0),
+                "Total (20)": evaluation.get("total", 0),
+                "Signature": evaluation.get("signature", "")
+            })
+        else:
+            rows.append({
+                "SN": idx,
+                "Roll Number": student.get("roll_no") or student.get("prn"),
+                "Student Name": student.get("name", ""),
+                "Guide Name": guide_name,
+                "Project Title": evaluation.get("project_title", ""),
+                "Synopsis Submission Status (Yes/No)": evaluation.get("synopsis_status", "No"),
+                "Chapter 3 (10)": evaluation.get("chapter3", 0),
+                "Chapter 4 (10)": evaluation.get("chapter4", 0),
+                "Project execution/demo/github link (10)": evaluation.get("execution_demo", 0),
+                "Total (30)": evaluation.get("total", 0),
+                "Signature": evaluation.get("signature", "")
+            })
 
     df = pd.DataFrame(rows)
     output = BytesIO()
@@ -3061,7 +3644,8 @@ def export_evaluation_sheet():
     output.seek(0)
 
     batch_part = f"_{selected_batch['name']}" if selected_batch else ""
-    filename = f"evaluation_{selected_session['name']}{batch_part}.xlsx".replace(" ", "_")
+    eval_label = "presentation1" if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1 else "presentation2"
+    filename = f"evaluation_{eval_label}_{selected_session['name']}{batch_part}.xlsx".replace(" ", "_")
     return send_file(
         output,
         as_attachment=True,

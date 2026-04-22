@@ -19,6 +19,30 @@ LEADERSHIP_DESIGNATIONS = {
 }
 
 
+def _is_leadership_account(user_data):
+    if not user_data:
+        return False
+    assignments = list(
+        current_app.db.role_assignments.find({"user_id": user_data["_id"]})
+    )
+    if assignments:
+        return any((item.get("role") in LEADERSHIP_DESIGNATIONS) for item in assignments)
+    return _normalize_designation(user_data.get("designation")) in LEADERSHIP_DESIGNATIONS
+
+
+def _primary_designation(user_data):
+    if not user_data:
+        return "faculty"
+    assignments = list(
+        current_app.db.role_assignments.find({"user_id": user_data["_id"]})
+    )
+    if assignments:
+        for role in ["director", "academic_coordinator", "project_coordinator", "hod"]:
+            if any(item.get("role") == role for item in assignments):
+                return role
+    return _normalize_designation(user_data.get("designation"))
+
+
 @auth_bp.route("/", methods=["GET", "POST"])
 def login():
     selected_role = "leadership"
@@ -40,12 +64,12 @@ def login():
             user_data = current_app.db.students.find_one({"prn": username})
         elif selected_role == "faculty":
             user_data = current_app.db.users.find_one({"email": username, "role": "faculty"})
-            if user_data and _normalize_designation(user_data.get("designation")) in LEADERSHIP_DESIGNATIONS:
+            if user_data and _is_leadership_account(user_data):
                 flash("This account uses Leadership login. Please select the Leadership card.", "warning")
                 return render_template("auth/login.html", selected_role=selected_role)
         elif selected_role == "leadership":
             user_data = current_app.db.users.find_one({"email": username, "role": {"$in": ["admin", "faculty"]}})
-            if user_data and _normalize_designation(user_data.get("designation")) not in LEADERSHIP_DESIGNATIONS:
+            if user_data and not _is_leadership_account(user_data):
                 flash("This account uses Mentor login. Please select the Mentor card.", "warning")
                 return render_template("auth/login.html", selected_role=selected_role)
         else:
@@ -60,7 +84,7 @@ def login():
 
             user = User(user_data)
             login_user(user)
-            designation = str(user_data.get("designation") or "").strip().lower().replace(" ", "_")
+            designation = _primary_designation(user_data)
 
             if not user_data.get("password_changed", True):
                 flash("Please update your password from your profile settings before continuing.", "warning")
@@ -128,14 +152,14 @@ def change_password():
 
         if current_user.role == "admin":
             current_user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
-            designation = str(current_user_record.get("designation") or "").strip().lower().replace(" ", "_") if current_user_record else ""
+            designation = _primary_designation(current_user_record)
             if designation == "director":
                 return redirect(url_for("admin.director_dashboard"))
             return redirect(url_for("admin.dashboard"))
 
         elif current_user.role == "faculty":
             current_user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
-            designation = str(current_user_record.get("designation") or "").strip().lower().replace(" ", "_") if current_user_record else ""
+            designation = _primary_designation(current_user_record)
             if designation == "project_coordinator":
                 return redirect(url_for("admin.dashboard"))
             return redirect(url_for("admin.faculty_dashboard"))

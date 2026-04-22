@@ -8,10 +8,15 @@
     <div class="session-toolbar">
         <div>
             <h4>Internship/Project Evaluation</h4>
-            <p class="section-subtitle">Sheet format aligned to your shared evaluation structure (without Offer Letter).</p>
+            <p class="section-subtitle">Sheet format aligned to your shared evaluation structure (without Offer Letter) for <strong>{{ selected_program }}</strong>.</p>
         </div>
         <div class="session-toolbar-actions">
             <form method="GET" action="{{ url_for('admin.evaluation_sheet') }}" class="session-filter-form" id="evaluationFiltersForm">
+                <select name="eval_type" onchange="this.form.submit()">
+                    <option value="presentation1" {% if selected_eval_type == 'presentation1' %}selected{% endif %}>Presentation 1</option>
+                    <option value="presentation2" {% if selected_eval_type == 'presentation2' %}selected{% endif %}>Presentation 2</option>
+                </select>
+
                 <select name="session" onchange="this.form.submit()">
                     {% for session in sessions %}
                     <option value="{{ session._id }}" {% if selected_session and session._id == selected_session._id %}selected{% endif %}>
@@ -34,7 +39,7 @@
                 {% endif %}
             </form>
 
-            <a href="{{ url_for('admin.export_evaluation_sheet', session=selected_session._id, batch=(selected_batch._id if selected_batch else '')) }}"
+            <a href="{{ url_for('admin.export_evaluation_sheet', session=selected_session._id, batch=(selected_batch._id if selected_batch else ''), eval_type=selected_eval_type) }}"
                class="btn-primary-custom no-page-loader">
                 <i class="fas fa-file-excel"></i> Download Sheet
             </a>
@@ -43,6 +48,21 @@
 </div>
 
 <div class="card modern-card evaluation-sheet-card">
+    {% if can_edit_evaluation %}
+    <div class="evaluation-toolbar">
+        <button type="submit" form="evaluationBulkForm" class="btn-save">
+            <i class="fas fa-save"></i> Save Evaluation Sheet
+        </button>
+    </div>
+    {% endif %}
+
+    {% if can_edit_evaluation %}
+    <form id="evaluationBulkForm" method="POST" action="{{ url_for('admin.save_evaluation_sheet') }}">
+        <input type="hidden" name="session_id" value="{{ selected_session._id }}">
+        <input type="hidden" name="batch_id" value="{{ selected_batch._id if selected_batch else '' }}">
+        <input type="hidden" name="eval_type" value="{{ selected_eval_type }}">
+    {% endif %}
+
     <div class="table-scroll-wrap evaluation-table-scroll">
         <table class="custom-table modern-table evaluation-table">
             <thead>
@@ -53,10 +73,16 @@
                     <th>Guide Name</th>
                     <th>Project Title</th>
                     <th>Synopsis Status (Yes/No)</th>
+                    {% if selected_eval_type == 'presentation1' %}
+                    <th>Chapter 1 (10)</th>
+                    <th>Chapter 2 (10)</th>
+                    <th>Total (20)</th>
+                    {% else %}
                     <th>Chapter 3 (10)</th>
                     <th>Chapter 4 (10)</th>
                     <th>Project execution/demo/github link (10)</th>
                     <th>Total (30)</th>
+                    {% endif %}
                     <th>Signature</th>
                     {% if can_edit_evaluation %}<th>Action</th>{% endif %}
                 </tr>
@@ -64,30 +90,49 @@
             <tbody>
                 {% for student in students %}
                 {% set row = evaluation_map.get(student._id|string) %}
+                {% set is_saved_row = row is not none %}
+                {% if selected_eval_type == 'presentation1' %}
+                {% set student_total = row.get('total', ((row.get('chapter1', 0) or 0) + (row.get('chapter2', 0) or 0))) if row else 0 %}
+                {% else %}
                 {% set student_total = row.get('total', ((row.get('chapter3', 0) or 0) + (row.get('chapter4', 0) or 0) + (row.get('execution_demo', 0) or 0))) if row else 0 %}
-                {% set save_form_id = "save-" ~ student._id|string %}
-                {% set delete_form_id = "delete-" ~ student._id|string %}
-                <tr>
+                {% endif %}
+                <tr class="evaluation-row {% if is_saved_row %}is-locked{% else %}is-editing{% endif %}" data-row-id="{{ student._id }}">
                     <td>{{ loop.index }}</td>
                     <td>{{ student.get('roll_no') or student.get('prn') }}</td>
                     <td>{{ student.get('name') }}</td>
                     <td>
                         {% if can_edit_evaluation %}
-                        <input type="text" name="guide_name" form="{{ save_form_id }}" value="{{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}">
+                        <span class="eval-view-value">{{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}</span>
+                        <input type="text"
+                               class="eval-edit-field"
+                               name="guide_name_{{ student._id }}"
+                               value="{{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}"
+                               {% if is_saved_row %}disabled{% endif %}>
+                        <input type="hidden"
+                               class="eval-edit-flag"
+                               name="editable_rows"
+                               value="{{ student._id }}"
+                               {% if is_saved_row %}disabled{% endif %}>
                         {% else %}
                         {{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}
                         {% endif %}
                     </td>
                     <td>
                         {% if can_edit_evaluation %}
-                        <input type="text" name="project_title" form="{{ save_form_id }}" value="{{ row.get('project_title') if row else '' }}">
+                        <span class="eval-view-value">{{ row.get('project_title') if row else '-' }}</span>
+                        <input type="text"
+                               class="eval-edit-field"
+                               name="project_title_{{ student._id }}"
+                               value="{{ row.get('project_title') if row else '' }}"
+                               {% if is_saved_row %}disabled{% endif %}>
                         {% else %}
                         {{ row.get('project_title') if row else '-' }}
                         {% endif %}
                     </td>
                     <td>
                         {% if can_edit_evaluation %}
-                        <select name="synopsis_status" form="{{ save_form_id }}">
+                        <span class="eval-view-value">{{ row.get('synopsis_status', 'No') if row else 'No' }}</span>
+                        <select class="eval-edit-field" name="synopsis_status_{{ student._id }}" {% if is_saved_row %}disabled{% endif %}>
                             <option value="Yes" {% if row and row.get('synopsis_status') == 'Yes' %}selected{% endif %}>Yes</option>
                             <option value="No" {% if not row or row.get('synopsis_status') != 'Yes' %}selected{% endif %}>No</option>
                         </select>
@@ -97,51 +142,115 @@
                     </td>
                     <td>
                         {% if can_edit_evaluation %}
-                        <input type="number" min="0" max="10" step="0.01" name="chapter3" form="{{ save_form_id }}" value="{{ row.get('chapter3', 0) if row else 0 }}">
+                            {% if selected_eval_type == 'presentation1' %}
+                            <span class="eval-view-value">{{ row.get('chapter1', 0) if row else 0 }}</span>
+                            <input type="number"
+                                   class="eval-edit-field"
+                                   min="0"
+                                   max="10"
+                                   step="0.01"
+                                   name="chapter1_{{ student._id }}"
+                                   value="{{ row.get('chapter1', 0) if row else 0 }}"
+                                   {% if is_saved_row %}disabled{% endif %}>
+                            {% else %}
+                            <span class="eval-view-value">{{ row.get('chapter3', 0) if row else 0 }}</span>
+                            <input type="number"
+                                   class="eval-edit-field"
+                                   min="0"
+                                   max="10"
+                                   step="0.01"
+                                   name="chapter3_{{ student._id }}"
+                                   value="{{ row.get('chapter3', 0) if row else 0 }}"
+                                   {% if is_saved_row %}disabled{% endif %}>
+                            {% endif %}
                         {% else %}
-                        {{ row.get('chapter3', 0) if row else 0 }}
+                            {% if selected_eval_type == 'presentation1' %}
+                            {{ row.get('chapter1', 0) if row else 0 }}
+                            {% else %}
+                            {{ row.get('chapter3', 0) if row else 0 }}
+                            {% endif %}
                         {% endif %}
                     </td>
                     <td>
                         {% if can_edit_evaluation %}
-                        <input type="number" min="0" max="10" step="0.01" name="chapter4" form="{{ save_form_id }}" value="{{ row.get('chapter4', 0) if row else 0 }}">
+                            {% if selected_eval_type == 'presentation1' %}
+                            <span class="eval-view-value">{{ row.get('chapter2', 0) if row else 0 }}</span>
+                            <input type="number"
+                                   class="eval-edit-field"
+                                   min="0"
+                                   max="10"
+                                   step="0.01"
+                                   name="chapter2_{{ student._id }}"
+                                   value="{{ row.get('chapter2', 0) if row else 0 }}"
+                                   {% if is_saved_row %}disabled{% endif %}>
+                            {% else %}
+                            <span class="eval-view-value">{{ row.get('chapter4', 0) if row else 0 }}</span>
+                            <input type="number"
+                                   class="eval-edit-field"
+                                   min="0"
+                                   max="10"
+                                   step="0.01"
+                                   name="chapter4_{{ student._id }}"
+                                   value="{{ row.get('chapter4', 0) if row else 0 }}"
+                                   {% if is_saved_row %}disabled{% endif %}>
+                            {% endif %}
                         {% else %}
-                        {{ row.get('chapter4', 0) if row else 0 }}
+                            {% if selected_eval_type == 'presentation1' %}
+                            {{ row.get('chapter2', 0) if row else 0 }}
+                            {% else %}
+                            {{ row.get('chapter4', 0) if row else 0 }}
+                            {% endif %}
                         {% endif %}
                     </td>
+                    {% if selected_eval_type != 'presentation1' %}
                     <td>
                         {% if can_edit_evaluation %}
-                        <input type="number" min="0" max="10" step="0.01" name="execution_demo" form="{{ save_form_id }}" value="{{ row.get('execution_demo', 0) if row else 0 }}">
+                        <span class="eval-view-value">{{ row.get('execution_demo', 0) if row else 0 }}</span>
+                        <input type="number"
+                               class="eval-edit-field"
+                               min="0"
+                               max="10"
+                               step="0.01"
+                               name="execution_demo_{{ student._id }}"
+                               value="{{ row.get('execution_demo', 0) if row else 0 }}"
+                               {% if is_saved_row %}disabled{% endif %}>
                         {% else %}
                         {{ row.get('execution_demo', 0) if row else 0 }}
                         {% endif %}
                     </td>
+                    {% endif %}
                     <td><strong>{{ student_total }}</strong></td>
                     <td>
                         {% if can_edit_evaluation %}
-                        <input type="text" name="signature" form="{{ save_form_id }}" value="{{ row.get('signature') if row else '' }}">
+                        <span class="eval-view-value">{{ row.get('signature', '-') if row else '-' }}</span>
+                        <input type="text"
+                               class="eval-edit-field"
+                               name="signature_{{ student._id }}"
+                               value="{{ row.get('signature') if row else '' }}"
+                               {% if is_saved_row %}disabled{% endif %}>
                         {% else %}
                         {{ row.get('signature', '-') if row else '-' }}
                         {% endif %}
                     </td>
                     {% if can_edit_evaluation %}
                     <td class="action-buttons">
-                        <form id="{{ save_form_id }}" method="POST" action="{{ url_for('admin.save_evaluation_row', student_id=student._id) }}">
-                            <input type="hidden" name="session_id" value="{{ selected_session._id }}">
-                            <input type="hidden" name="batch_id" value="{{ selected_batch._id if selected_batch else '' }}">
-                            <button type="submit" class="btn-edit">Save</button>
-                        </form>
-                        <form id="{{ delete_form_id }}" method="POST" action="{{ url_for('admin.delete_evaluation_row', student_id=student._id) }}">
-                            <input type="hidden" name="session_id" value="{{ selected_session._id }}">
-                            <input type="hidden" name="batch_id" value="{{ selected_batch._id if selected_batch else '' }}">
-                            <button type="submit" class="btn-remove">Remove</button>
-                        </form>
+                        <button type="button"
+                                class="{% if is_saved_row %}btn-edit{% else %}btn-save{% endif %} eval-row-action"
+                                data-row-id="{{ student._id }}"
+                                data-save-url="{{ url_for('admin.save_evaluation_row', student_id=student._id) }}"
+                                data-mode="{% if is_saved_row %}edit{% else %}save{% endif %}">
+                            {% if is_saved_row %}Edit{% else %}Save{% endif %}
+                        </button>
                     </td>
                     {% endif %}
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="{{ 12 if can_edit_evaluation else 11 }}" class="text-center text-muted">
+                    {% set empty_colspan = 11 if can_edit_evaluation else 10 %}
+                    {% if selected_eval_type != 'presentation1' %}
+                    {% set empty_colspan = empty_colspan + 1 %}
+                    {% endif %}
+                    <td colspan="{{ empty_colspan }}" class="text-center text-muted">
                         No students available for this filter.
                     </td>
                 </tr>
@@ -149,7 +258,84 @@
             </tbody>
         </table>
     </div>
+
+    {% if can_edit_evaluation %}
+    </form>
+    {% endif %}
 </div>
 </section>
+
+{% if can_edit_evaluation %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const evalType = "{{ selected_eval_type }}";
+    document.querySelectorAll(".eval-row-action").forEach(function (button) {
+        button.addEventListener("click", function () {
+            const rowId = button.getAttribute("data-row-id");
+            const saveUrl = button.getAttribute("data-save-url");
+            const mode = button.getAttribute("data-mode");
+            const row = document.querySelector(`tr[data-row-id="${rowId}"]`);
+            if (!row || !saveUrl) return;
+
+            if (mode === "edit") {
+                row.classList.remove("is-locked");
+                row.classList.add("is-editing");
+                row.querySelectorAll(".eval-edit-field").forEach(function (field) {
+                    field.disabled = false;
+                });
+                row.querySelectorAll(".eval-edit-flag").forEach(function (flag) {
+                    flag.disabled = false;
+                });
+
+                button.setAttribute("data-mode", "save");
+                button.textContent = "Save";
+                button.classList.remove("btn-edit");
+                button.classList.add("btn-save");
+                return;
+            }
+
+            const getValue = function (selector) {
+                const el = row.querySelector(selector);
+                return el ? (el.value || "").trim() : "";
+            };
+
+            const tempForm = document.createElement("form");
+            tempForm.method = "POST";
+            tempForm.action = saveUrl;
+            tempForm.style.display = "none";
+
+            const payload = {
+                session_id: "{{ selected_session._id }}",
+                batch_id: "{{ selected_batch._id if selected_batch else '' }}",
+                eval_type: evalType,
+                guide_name: getValue(`input[name="guide_name_${rowId}"]`),
+                project_title: getValue(`input[name="project_title_${rowId}"]`),
+                synopsis_status: getValue(`select[name="synopsis_status_${rowId}"]`) || "No",
+                signature: getValue(`input[name="signature_${rowId}"]`)
+            };
+            if (evalType === "presentation1") {
+                payload.chapter1 = getValue(`input[name="chapter1_${rowId}"]`) || "0";
+                payload.chapter2 = getValue(`input[name="chapter2_${rowId}"]`) || "0";
+            } else {
+                payload.chapter3 = getValue(`input[name="chapter3_${rowId}"]`) || "0";
+                payload.chapter4 = getValue(`input[name="chapter4_${rowId}"]`) || "0";
+                payload.execution_demo = getValue(`input[name="execution_demo_${rowId}"]`) || "0";
+            }
+
+            Object.entries(payload).forEach(function ([key, value]) {
+                const input = document.createElement("input");
+                input.type = "hidden";
+                input.name = key;
+                input.value = value;
+                tempForm.appendChild(input);
+            });
+
+            document.body.appendChild(tempForm);
+            tempForm.submit();
+        });
+    });
+});
+</script>
+{% endif %}
 
 {% endblock %}
