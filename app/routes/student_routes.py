@@ -16,6 +16,59 @@ from urllib.parse import urlparse
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
 
+PROJECT_CATEGORY_LABELS = {
+    "mini_project": "Mini Project",
+    "field_project": "Field Project",
+    "major_project": "Major Project",
+    "desk_research": "Desk Research",
+    "research_project": "Research Project"
+}
+
+
+def normalize_project_category(value, program=None):
+    selected_program = str(program or "MCA").strip().upper()
+    if selected_program != "MBA":
+        return "mini_project"
+    normalized = str(value or "").strip().lower().replace(" ", "_")
+    return normalized if normalized in PROJECT_CATEGORY_LABELS else "mini_project"
+
+
+def project_category_label(value):
+    return PROJECT_CATEGORY_LABELS.get(str(value or "").strip().lower(), "Mini Project")
+
+
+def scoped_content_query(program, project_category):
+    if str(program).upper() == "MBA":
+        if project_category == "mini_project":
+            return {
+                "$and": [
+                    {"program": "MBA"},
+                    {
+                        "$or": [
+                            {"project_category": "mini_project"},
+                            {"project_category": {"$exists": False}},
+                            {"project_category": None},
+                            {"project_category": ""}
+                        ]
+                    }
+                ]
+            }
+        return {"program": "MBA", "project_category": project_category}
+
+    return {
+        "$and": [
+            {"$or": [{"program": "MCA"}, {"program": {"$exists": False}}]},
+            {
+                "$or": [
+                    {"project_category": "mini_project"},
+                    {"project_category": {"$exists": False}},
+                    {"project_category": None},
+                    {"project_category": ""}
+                ]
+            }
+        ]
+    }
+
 def save_profile_photo(file_storage, user_id):
     if not file_storage or not file_storage.filename:
         return None
@@ -170,12 +223,14 @@ def dashboard():
     student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
 
     batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
+    batch_program = str((batch or {}).get("program") or student.get("program") or "MCA").strip().upper()
+    batch_category = normalize_project_category((batch or {}).get("project_category") or student.get("project_category"), batch_program)
 
     mentor = None
     if batch and batch.get("mentor_id"):
         mentor = current_app.db.users.find_one({"_id": batch["mentor_id"]})
 
-    stages = list(current_app.db.stages.find().sort("order", 1))
+    stages = list(current_app.db.stages.find(scoped_content_query(batch_program, batch_category)).sort("order", 1))
 
     submissions = list(current_app.db.submissions.find({
         "student_id": student["_id"]
@@ -291,6 +346,7 @@ def dashboard():
         student=student,
         batch=batch,
         mentor=mentor,
+        selected_project_category=batch_category,
         progress=progress,
         notifications=notifications,
         unread_count=unread_count
@@ -372,8 +428,11 @@ def update_student_profile():
 def submissions():
 
     student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
+    batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student.get("batch_id") else None
+    batch_program = str((batch or {}).get("program") or student.get("program") or "MCA").strip().upper()
+    batch_category = normalize_project_category((batch or {}).get("project_category") or student.get("project_category"), batch_program)
 
-    stages = list(current_app.db.stages.find().sort("order", 1))
+    stages = list(current_app.db.stages.find(scoped_content_query(batch_program, batch_category)).sort("order", 1))
 
     submissions = list(current_app.db.submissions.find({
         "student_id": student["_id"]
@@ -384,9 +443,7 @@ def submissions():
     for s in submissions:
         submission_dict[str(s["stage_id"])] = s
 
-    deadline_query = get_session_deadline_query(
-        current_app.db.batches.find_one({"_id": student["batch_id"]})
-    )
+    deadline_query = get_session_deadline_query(batch)
     deadlines = list(current_app.db.deadlines.find(deadline_query)) if deadline_query else []
 
     deadline_dict = {}
@@ -395,10 +452,10 @@ def submissions():
         deadline_dict[str(d["stage_id"])] = d["deadline"]
 
     progress_document_dict = {}
-    batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student.get("batch_id") else None
     if batch and batch.get("session_id"):
         progress_documents = current_app.db.progress_documents.find({
-            "session_id": batch["session_id"]
+            "session_id": batch["session_id"],
+            "project_category": batch_category
         })
         for document in progress_documents:
             progress_document_dict[str(document.get("stage_id"))] = document
@@ -408,6 +465,7 @@ def submissions():
         stages=stages,
         submission_dict=submission_dict,
         deadline_dict=deadline_dict,
+        selected_project_category=batch_category,
         progress_document_dict=progress_document_dict
     )
 
@@ -448,19 +506,26 @@ def final_project_page():
 
     student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
     batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student.get("batch_id") else None
+    batch_program = str((batch or {}).get("program") or (student or {}).get("program") or "MCA").strip().upper()
+    if batch_program not in {"MCA", "MBA"}:
+        batch_program = "MCA"
+    batch_category = normalize_project_category((batch or {}).get("project_category") or (student or {}).get("project_category"), batch_program)
     mentor = None
 
     if batch and batch.get("mentor_id"):
         mentor = current_app.db.users.find_one({"_id": batch["mentor_id"]})
 
-    final_project = current_app.db.final_submissions.find_one({"student_id": student["_id"]})
+    final_project_query = {"student_id": student["_id"]}
+    final_project_query.update(scoped_content_query(batch_program, batch_category))
+    final_project = current_app.db.final_submissions.find_one(final_project_query)
 
     return render_template(
         "student/final_project.html",
         student=student,
         batch=batch,
         mentor=mentor,
-        final_project=final_project
+        final_project=final_project,
+        selected_project_category=batch_category
     )
 
 
@@ -476,6 +541,11 @@ def upload_stage(stage_id):
     # -------- DEADLINE CHECK --------
 
     batch = current_app.db.batches.find_one({"_id": batch_id})
+    batch_program = str((batch or {}).get("program") or (student or {}).get("program") or "MCA").strip().upper()
+    if batch_program not in {"MCA", "MBA"}:
+        batch_program = "MCA"
+    batch_category = normalize_project_category((batch or {}).get("project_category") or (student or {}).get("project_category"), batch_program)
+    category_name = project_category_label(batch_category)
     deadline_query = get_session_deadline_query(batch, ObjectId(stage_id))
     deadline_doc = current_app.db.deadlines.find_one(deadline_query) if deadline_query else None
 
@@ -541,7 +611,9 @@ def upload_stage(stage_id):
                 "submitted_at": now,
                 "status": "pending",
                 "late": late,
-                "reminder_sent": False
+                "reminder_sent": False,
+                "program": batch_program,
+                "project_category": batch_category
             },
             "$unset": {
                 "remark": "",
@@ -557,10 +629,6 @@ def upload_stage(stage_id):
     stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
     stage_name = stage["name"]
 
-    batch = current_app.db.batches.find_one({"_id": student["batch_id"]})
-    batch_program = str((batch or {}).get("program") or (student or {}).get("program") or "MCA").strip().upper()
-    if batch_program not in {"MCA", "MBA"}:
-        batch_program = "MCA"
     faculty_id = batch.get("mentor_id")
 
     if faculty_id:
@@ -570,7 +638,7 @@ def upload_stage(stage_id):
     if faculty_id:
         create_notification(
             faculty_id,
-            f"{student_name} submitted {stage_name}"
+            f"{student_name} submitted {stage_name} ({category_name})"
         )
 
         # EMAIL faculty
@@ -580,25 +648,25 @@ def upload_stage(stage_id):
             try:
                 send_email(
                     faculty["email"],
-                    "New Submission",
-                    submission_email(student_name, stage_name)
+                    f"New Submission - {category_name}",
+                    submission_email(student_name, f"{stage_name} ({category_name})")
                 )
             except Exception as e:
                 print("Email error:", e)
 
     # Notify leadership roles (Director, PC, AC, HOD)
-    leadership_message = f"{student_name} submitted {stage_name} (Pending review)"
+    leadership_message = f"{student_name} submitted {stage_name} ({category_name}) (Pending review)"
     notify_leadership(
         leadership_message,
-        email_subject="New Submission Alert",
-        email_html=submission_email(student_name, stage_name),
+        email_subject=f"New Submission Alert - {category_name}",
+        email_html=submission_email(student_name, f"{stage_name} ({category_name})"),
         exclude_ids=[faculty_id] if faculty_id else None,
         program=batch_program
     )
 
     # -------- LATE SUBMISSION --------
     if late:
-        late_message = f"{student_name} submitted {stage_name} late"
+        late_message = f"{student_name} submitted {stage_name} late ({category_name})"
         notified_user_ids = set()
         emailed_addresses = set()
 
@@ -612,8 +680,8 @@ def upload_stage(stage_id):
                 try:
                     send_email(
                         faculty_email,
-                        "Late Submission Alert",
-                        late_submission_email(student_name, stage_name)
+                        f"Late Submission Alert - {category_name}",
+                        late_submission_email(student_name, f"{stage_name} ({category_name})")
                     )
                     emailed_addresses.add(faculty_email)
                 except Exception as e:
@@ -621,8 +689,8 @@ def upload_stage(stage_id):
 
         notify_leadership(
             late_message,
-            email_subject="Late Submission Alert",
-            email_html=late_submission_email(student_name, stage_name),
+            email_subject=f"Late Submission Alert - {category_name}",
+            email_html=late_submission_email(student_name, f"{stage_name} ({category_name})"),
             exclude_ids=list(notified_user_ids),
             program=batch_program
         )
@@ -649,6 +717,8 @@ def final_project_submission():
     batch_program = str((batch or {}).get("program") or (student or {}).get("program") or "MCA").strip().upper()
     if batch_program not in {"MCA", "MBA"}:
         batch_program = "MCA"
+    batch_category = normalize_project_category((batch or {}).get("project_category") or (student or {}).get("project_category"), batch_program)
+    category_name = project_category_label(batch_category)
 
     title = request.form.get("title", "").strip()
     description = request.form.get("description", "").strip()
@@ -713,7 +783,9 @@ def final_project_submission():
                 "live_link": live_link,
                 "status": "pending",
                 "submitted_at": now,
-                "updated_at": now
+                "updated_at": now,
+                "program": batch_program,
+                "project_category": batch_category
             },
             "$unset": {
                 "remark": "",
@@ -724,7 +796,7 @@ def final_project_submission():
     )
 
     student_name = student.get("name", "Student")
-    notification_message = f"{student_name} submitted final project: {title}"
+    notification_message = f"{student_name} submitted {category_name} final project: {title}"
     emailed_addresses = set()
 
     if mentor_id:
@@ -735,8 +807,8 @@ def final_project_submission():
             try:
                 send_email(
                     mentor_email,
-                    "Final Project Submission",
-                    final_project_submission_email(student_name, title)
+                    f"Final Project Submission - {category_name}",
+                    final_project_submission_email(student_name, f"{title} ({category_name})")
                 )
                 emailed_addresses.add(mentor_email)
             except Exception as e:
@@ -744,8 +816,8 @@ def final_project_submission():
 
     notify_leadership(
         notification_message,
-        email_subject="Final Project Submission",
-        email_html=final_project_submission_email(student_name, title),
+        email_subject=f"Final Project Submission - {category_name}",
+        email_html=final_project_submission_email(student_name, f"{title} ({category_name})"),
         exclude_ids=[mentor_id] if mentor_id else None,
         program=batch_program
     )

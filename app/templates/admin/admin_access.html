@@ -91,10 +91,12 @@
                                 <input type="hidden" name="program" value="MBA">
                                 <button type="submit" class="btn-sm-custom btn-hod">Set MBA HOD</button>
                             </form>
+                            {% if member.global_designation == "academic_coordinator" %}
                             <form method="POST" action="{{ url_for('admin.remove_staff_designation', user_id=member._id) }}">
                                 <input type="hidden" name="designation" value="academic_coordinator">
                                 <button type="submit" class="btn-sm-custom btn-danger">Remove AC</button>
                             </form>
+                            {% endif %}
                             {% if member.mca_designation in ["project_coordinator", "hod"] %}
                             <form method="POST" action="{{ url_for('admin.remove_staff_designation', user_id=member._id) }}">
                                 <input type="hidden" name="designation" value="{{ member.mca_designation }}">

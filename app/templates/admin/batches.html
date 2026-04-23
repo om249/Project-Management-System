@@ -54,7 +54,11 @@
 </div>
 
 <div class="card">
-    <p class="section-subtitle">Creating batch for <strong>{{ selected_program }}</strong> • <strong>{{ selected_session.name }}</strong></p>
+    <p class="section-subtitle">
+        Creating batch for <strong>{{ selected_program }}</strong>
+        {% if selected_program == "MBA" %} • <strong>{{ selected_project_category_label }}</strong>{% endif %}
+        • <strong>{{ selected_session.name }}</strong>
+    </p>
     <form method="POST" class="inline-form">
         <input type="hidden" name="session" value="{{ selected_session._id }}">
         <input type="text" name="name" placeholder="Enter batch name" required>
@@ -66,7 +70,11 @@
 
 <div class="card">
     <h4>Existing Batches</h4>
-    <p class="section-subtitle">Showing batches for <strong>{{ selected_program }}</strong> • <strong>{{ selected_session.name }}</strong></p>
+    <p class="section-subtitle">
+        Showing batches for <strong>{{ selected_program }}</strong>
+        {% if selected_program == "MBA" %} • <strong>{{ selected_project_category_label }}</strong>{% endif %}
+        • <strong>{{ selected_session.name }}</strong>
+    </p>
 
     <table class="custom-table">
         <thead>

@@ -29,6 +29,14 @@ SESSION_NAME_PATTERN = re.compile(r"^\d{4}-\d{2}$")
 EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 PROGRAM_OPTIONS = {"MCA", "MBA"}
 DEFAULT_PROGRAM = "MCA"
+PROJECT_CATEGORY_OPTIONS = [
+    ("mini_project", "Mini Project"),
+    ("field_project", "Field Project"),
+    ("major_project", "Major Project"),
+    ("desk_research", "Desk Research"),
+    ("research_project", "Research Project")
+]
+DEFAULT_PROJECT_CATEGORY = "mini_project"
 
 
 def get_current_program():
@@ -41,7 +49,52 @@ def get_current_program():
         if locked_program:
             selected = locked_program
     session["selected_program"] = selected
+    if selected != "MBA":
+        session["selected_project_category"] = DEFAULT_PROJECT_CATEGORY
+    elif "selected_project_category" not in session:
+        session["selected_project_category"] = DEFAULT_PROJECT_CATEGORY
     return selected
+
+
+def project_category_label(value):
+    mapping = {key: label for key, label in PROJECT_CATEGORY_OPTIONS}
+    return mapping.get(str(value or "").strip().lower(), "Mini Project")
+
+
+def normalize_project_category(value, program=None):
+    selected_program = (program or get_current_program()).strip().upper()
+    if selected_program != "MBA":
+        return DEFAULT_PROJECT_CATEGORY
+    allowed = {key for key, _ in PROJECT_CATEGORY_OPTIONS}
+    normalized = str(value or "").strip().lower().replace(" ", "_")
+    return normalized if normalized in allowed else DEFAULT_PROJECT_CATEGORY
+
+
+def get_current_project_category(program=None):
+    selected_program = (program or get_current_program()).strip().upper()
+    if selected_program != "MBA":
+        session["selected_project_category"] = DEFAULT_PROJECT_CATEGORY
+        return DEFAULT_PROJECT_CATEGORY
+    selected_category = normalize_project_category(session.get("selected_project_category"), selected_program)
+    session["selected_project_category"] = selected_category
+    return selected_category
+
+
+def project_category_filter_query(program=None, project_category=None):
+    selected_program = (program or get_current_program()).strip().upper()
+    if selected_program != "MBA":
+        return {}
+    selected_category = normalize_project_category(project_category or get_current_project_category(selected_program), selected_program)
+    if selected_category == DEFAULT_PROJECT_CATEGORY:
+        return {
+            "$or": [
+                {"project_category": selected_category},
+                {"project_category": {"$exists": False}},
+                {"project_category": None},
+                {"project_category": ""}
+            ]
+        }
+    return {"project_category": selected_category}
 
 
 def program_filter_query(program=None):
@@ -51,13 +104,14 @@ def program_filter_query(program=None):
     return {"program": selected}
 
 
-def with_program_scope(query, program=None):
+def with_program_scope(query, program=None, project_category=None):
     base_query = query or {}
+    filters = [base_query, program_filter_query(program)]
+    category_query = project_category_filter_query(program, project_category)
+    if category_query:
+        filters.append(category_query)
     return {
-        "$and": [
-            base_query,
-            program_filter_query(program)
-        ]
+        "$and": filters
     }
 
 
@@ -998,16 +1052,18 @@ def session_filter(selected_session):
     }
 
 
-def get_faculty_assigned_batch(faculty_id, selected_session_id=None, selected_program=None):
+def get_faculty_assigned_batch(faculty_id, selected_session_id=None, selected_program=None, selected_project_category=None):
     sessions, selected_session = get_selected_session(selected_session_id)
     scoped_filter = session_filter(selected_session)
     program = (selected_program or get_current_program()).upper()
     program_query = program_filter_query(program)
+    category_query = project_category_filter_query(program, selected_project_category)
 
     batch = current_app.db.batches.find_one(
         {
             "mentor_id": faculty_id,
             **program_query,
+            **category_query,
             "$or": scoped_filter["$or"]
         },
         sort=[("created_at", -1)]
@@ -1015,7 +1071,7 @@ def get_faculty_assigned_batch(faculty_id, selected_session_id=None, selected_pr
 
     if not batch:
         batch = current_app.db.batches.find_one(
-            {"mentor_id": faculty_id, **program_query},
+            {"mentor_id": faculty_id, **program_query, **category_query},
             sort=[("created_at", -1)]
         )
 
@@ -1028,14 +1084,24 @@ def get_faculty_assigned_batch(faculty_id, selected_session_id=None, selected_pr
 @operations_access_required
 def dashboard():
     ensure_admin_access_state()
-    total_batches = current_app.db.batches.count_documents({})
-    total_stages = current_app.db.stages.count_documents({})
-    total_students = current_app.db.students.count_documents({})
-    total_faculty = current_app.db.users.count_documents({"role": "faculty"})
-    pending_submissions = current_app.db.submissions.count_documents({"status": "pending"})
-    approved_submissions = current_app.db.submissions.count_documents({"status": "approved"})
-    late_submissions = current_app.db.submissions.count_documents({"late": True})
-    batches = list(current_app.db.batches.find().sort("created_at", -1))
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
+    scope_query = with_program_scope({}, selected_program, selected_project_category)
+    program_students = list(current_app.db.students.find(scope_query, {"_id": 1}))
+    program_student_ids = [student["_id"] for student in program_students]
+    submission_query = {"student_id": {"$in": program_student_ids}} if program_student_ids else {"_id": None}
+
+    total_batches = current_app.db.batches.count_documents(scope_query)
+    total_stages = current_app.db.stages.count_documents(scope_query)
+    total_students = len(program_student_ids)
+    total_faculty = current_app.db.users.count_documents({
+        "role": "faculty",
+        **user_program_filter_query(selected_program)
+    })
+    pending_submissions = current_app.db.submissions.count_documents({**submission_query, "status": "pending"})
+    approved_submissions = current_app.db.submissions.count_documents({**submission_query, "status": "approved"})
+    late_submissions = current_app.db.submissions.count_documents({**submission_query, "late": True})
+    batches = list(current_app.db.batches.find(scope_query).sort("created_at", -1))
 
     batch_summaries = []
     for batch in batches[:5]:
@@ -1057,6 +1123,8 @@ def dashboard():
 
     return render_template(
         "admin/dashboard.html",
+        selected_program=selected_program,
+        selected_project_category=selected_project_category,
         total_batches=total_batches,
         total_stages=total_stages,
         total_students=total_students,
@@ -1142,10 +1210,12 @@ def admin_profile():
     admin = current_app.db.users.find_one({
         "_id": ObjectId(current_user.id)
     })
+    admin_role_label = get_user_role_display_label(admin)
 
     return render_template(
         "admin/profile.html",
-        admin=admin
+        admin=admin,
+        admin_role_label=admin_role_label
     )
 
 
@@ -1255,7 +1325,29 @@ def set_program_context():
             flash("Invalid program selected.", "warning")
         else:
             session["selected_program"] = selected_program
+            if selected_program != "MBA":
+                session["selected_project_category"] = DEFAULT_PROJECT_CATEGORY
+            else:
+                session["selected_project_category"] = normalize_project_category(
+                    session.get("selected_project_category"),
+                    selected_program
+                )
 
+    next_url = request.form.get("next_url") or request.referrer or url_for("admin.dashboard")
+    return redirect(next_url)
+
+
+@admin_bp.route("/set-project-category", methods=["POST"])
+@login_required
+def set_project_category_context():
+    selected_program = get_current_program()
+    if selected_program != "MBA":
+        session["selected_project_category"] = DEFAULT_PROJECT_CATEGORY
+    else:
+        session["selected_project_category"] = normalize_project_category(
+            request.form.get("project_category"),
+            selected_program
+        )
     next_url = request.form.get("next_url") or request.referrer or url_for("admin.dashboard")
     return redirect(next_url)
 
@@ -1295,6 +1387,7 @@ def set_program_context():
 @operations_access_required
 def manage_batches():
     selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
     selected_session_id = request.values.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
 
@@ -1321,6 +1414,7 @@ def manage_batches():
                     "year": selected_session["name"],
                     "session_id": selected_session["_id"],
                     "program": selected_program,
+                    "project_category": selected_project_category,
                     "mentor_id": None,
                     "created_at": datetime.utcnow()
                 })
@@ -1364,7 +1458,8 @@ def manage_batches():
         batches=batches,
         faculty=faculty,
         sessions=sessions,
-        selected_session=selected_session
+        selected_session=selected_session,
+        selected_project_category=selected_project_category
     )
 
 # ===================== ASSIGN MENTOR =====================
@@ -1402,6 +1497,7 @@ def assign_mentor():
         "mentor_id": ObjectId(mentor_id),
         "session_id": batch.get("session_id"),
         "program": batch.get("program"),
+        "project_category": batch.get("project_category"),
         "_id": {"$ne": ObjectId(batch_id)}
     })
 
@@ -1480,6 +1576,7 @@ def delete_batch(batch_id):
 @operations_access_required
 def manage_stages():
     selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
     selected_session_id = request.values.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
 
@@ -1492,7 +1589,7 @@ def manage_stages():
             return redirect(url_for("admin.manage_stages", session=str(selected_session["_id"])))
 
         last_stage = current_app.db.stages.find_one(
-            program_filter_query(selected_program),
+            with_program_scope({}, selected_program, selected_project_category),
             sort=[("order", -1)]
         )
         next_order = last_stage["order"] + 1 if last_stage else 1
@@ -1500,6 +1597,7 @@ def manage_stages():
         current_app.db.stages.insert_one({
             "name": name,
             "program": selected_program,
+            "project_category": selected_project_category,
             "order": next_order
         })
 
@@ -1507,7 +1605,11 @@ def manage_stages():
         return redirect(url_for("admin.manage_stages", session=str(selected_session["_id"])))
 
     # -------- GET DATA --------
-    stages = list(current_app.db.stages.find(program_filter_query(selected_program)).sort("order", 1))
+    stages = list(
+        current_app.db.stages.find(
+            with_program_scope({}, selected_program, selected_project_category)
+        ).sort("order", 1)
+    )
 
     deadline_dict = {}
     deadlines = current_app.db.deadlines.find(get_session_deadline_query(selected_session["_id"]))
@@ -1516,7 +1618,8 @@ def manage_stages():
         deadline_dict[str(d["stage_id"])] = d["deadline"].strftime("%Y-%m-%d")
 
     progress_documents = current_app.db.progress_documents.find({
-        "session_id": selected_session["_id"]
+        "session_id": selected_session["_id"],
+        **project_category_filter_query(selected_program, selected_project_category)
     })
     progress_document_dict = {
         str(document.get("stage_id")): ensure_progress_document_preview(document)
@@ -1528,6 +1631,7 @@ def manage_stages():
         stages=stages,
         sessions=sessions,
         selected_session=selected_session,
+        selected_project_category=selected_project_category,
         deadline_dict=deadline_dict,
         progress_document_dict=progress_document_dict
     )
@@ -1541,29 +1645,42 @@ def upload_progress_document():
     session_id = request.form.get("session_id")
     stage_id = request.form.get("stage_id")
     document = request.files.get("document")
+    expects_json = "application/json" in (request.headers.get("Accept", "").lower())
 
     if not session_id or not stage_id:
+        if expects_json:
+            return jsonify({"success": False, "error": "Select a valid progress report before uploading a document."}), 400
         flash("Select a valid progress report before uploading a document.", "warning")
         return redirect(url_for("admin.manage_stages"))
 
     session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
     if not session:
+        if expects_json:
+            return jsonify({"success": False, "error": "Selected academic session was not found."}), 404
         flash("Selected academic session was not found.", "warning")
         return redirect(url_for("admin.manage_stages"))
 
     stage = current_app.db.stages.find_one({"_id": ObjectId(stage_id)})
     if not stage:
+        if expects_json:
+            return jsonify({"success": False, "error": "Selected progress report was not found."}), 404
         flash("Selected progress report was not found.", "warning")
         return redirect(url_for("admin.manage_stages", session=session_id))
 
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
+
     saved_document = save_progress_document(document, session_id)
     if not saved_document:
+        if expects_json:
+            return jsonify({"success": False, "error": "Upload a valid previewable document: PDF, DOC, DOCX, PPT, PPTX, XLS, or XLSX."}), 400
         flash("Upload a valid previewable document: PDF, DOC, DOCX, PPT, PPTX, XLS, or XLSX.", "warning")
         return redirect(url_for("admin.manage_stages", session=session_id))
 
     existing_document = current_app.db.progress_documents.find_one({
         "session_id": session["_id"],
-        "stage_id": stage["_id"]
+        "stage_id": stage["_id"],
+        **project_category_filter_query(selected_program, selected_project_category)
     })
 
     if existing_document and existing_document.get("file_name"):
@@ -1587,6 +1704,8 @@ def upload_progress_document():
         "session_name": session["name"],
         "stage_id": stage["_id"],
         "stage_name": stage["name"],
+        "program": selected_program,
+        "project_category": selected_project_category,
         "file_name": saved_document["file_name"],
         "pdf_file": saved_document["pdf_file"],
         "preview_status": saved_document["preview_status"],
@@ -1617,6 +1736,15 @@ def upload_progress_document():
         args=(app, str(document_id), session_id, stage_id, saved_document["original_name"], is_reupload),
         daemon=True
     ).start()
+
+    if expects_json:
+        return jsonify({
+            "success": True,
+            "filename": saved_document["file_name"],
+            "pdf_file": saved_document["pdf_file"],
+            "preview_status": saved_document["preview_status"],
+            "is_reupload": is_reupload
+        })
 
     return redirect(url_for("admin.manage_stages", session=session_id))
 
@@ -1671,6 +1799,8 @@ def save_single_deadline():
 
     if deadline_value:
         deadline_date = datetime.strptime(deadline_value, "%Y-%m-%d")
+        selected_program = get_current_program()
+        selected_project_category = get_current_project_category(selected_program)
 
         current_app.db.deadlines.update_one(
             get_session_deadline_query(ObjectId(session_id), ObjectId(stage_id)),
@@ -1678,7 +1808,9 @@ def save_single_deadline():
                 "$set": {
                     "session_id": ObjectId(session_id),
                     "stage_id": ObjectId(stage_id),
-                    "deadline": deadline_date
+                    "deadline": deadline_date,
+                    "program": selected_program,
+                    "project_category": selected_project_category
                 }
             },
             upsert=True
@@ -1999,7 +2131,9 @@ def faculty_profile():
     faculty = current_app.db.users.find_one({
         "_id": ObjectId(current_user.id)
     })
-    batch, _, _ = get_faculty_assigned_batch(faculty["_id"], request.args.get("session"))
+    selected_program = get_current_program()
+    faculty_role_label = get_user_role_display_label(faculty)
+    batch, _, _ = get_faculty_assigned_batch(faculty["_id"], request.args.get("session"), selected_program)
 
     if request.method == "POST":
 
@@ -2019,7 +2153,13 @@ def faculty_profile():
         flash("Profile updated successfully")
         return redirect(url_for("admin.faculty_profile"))
 
-    return render_template("faculty/profile.html", faculty=faculty, batch=batch)
+    return render_template(
+        "faculty/profile.html",
+        faculty=faculty,
+        batch=batch,
+        selected_program=selected_program,
+        faculty_role_label=faculty_role_label
+    )
 
 
 # ===================== DELETE FACULTY =====================
@@ -2039,19 +2179,39 @@ def delete_faculty(faculty_id):
 def faculty_dashboard():
 
     mentor_id = ObjectId(current_user.id)
-    batch, _, _ = get_faculty_assigned_batch(mentor_id, request.args.get("session"))
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
+    user_record = get_staff_user()
+    current_designation = get_user_designation(user_record, selected_program)
+    batch, _, _ = get_faculty_assigned_batch(
+        mentor_id,
+        request.args.get("session"),
+        selected_program,
+        selected_project_category
+    )
 
     students = []
-    stages = list(current_app.db.stages.find().sort("order", 1))
+    stages = list(
+        current_app.db.stages.find(
+            with_program_scope({}, selected_program, selected_project_category)
+        ).sort("order", 1)
+    )
 
     if batch:
         students = list(current_app.db.students.find({
             "batch_id": batch["_id"]
         }))
+    elif current_designation == DESIGNATION_HOD:
+        students = list(
+            current_app.db.students.find(
+                with_program_scope({}, selected_program, selected_project_category)
+            )
+        )
 
+    student_ids = [s["_id"] for s in students]
     submissions = list(current_app.db.submissions.find({
-        "student_id": {"$in": [s["_id"] for s in students]}
-    }))
+        "student_id": {"$in": student_ids}
+    })) if student_ids else []
 
     submission_dict = {}
 
@@ -2059,9 +2219,13 @@ def faculty_dashboard():
         key = str(s["student_id"]) + "_" + str(s["stage_id"])
         submission_dict[key] = s
 
-    deadlines = list(current_app.db.deadlines.find(
-        get_session_deadline_query(batch["session_id"])
-    )) if batch and batch.get("session_id") else []
+    deadlines = []
+    if batch and batch.get("session_id"):
+        deadlines = list(current_app.db.deadlines.find(get_session_deadline_query(batch["session_id"])))
+    elif current_designation == DESIGNATION_HOD:
+        _, selected_session = get_selected_session(request.args.get("session"))
+        if selected_session:
+            deadlines = list(current_app.db.deadlines.find(get_session_deadline_query(selected_session["_id"])))
 
     deadline_dict = {}
 
@@ -2071,7 +2235,8 @@ def faculty_dashboard():
     progress_document_dict = {}
     if batch and batch.get("session_id"):
         progress_documents = current_app.db.progress_documents.find({
-            "session_id": batch["session_id"]
+            "session_id": batch["session_id"],
+            **project_category_filter_query(selected_program, selected_project_category)
         })
         progress_document_dict = {
             str(document.get("stage_id")): ensure_progress_document_preview(document)
@@ -2110,6 +2275,9 @@ def faculty_dashboard():
 
     return render_template(
         "faculty/dashboard.html",
+        selected_program=selected_program,
+        selected_project_category=selected_project_category,
+        dashboard_scope_label=f"{selected_program} {get_user_role_display_label(user_record)}".strip(),
         batch=batch,
         students=students,
         stages=stages,
@@ -2133,6 +2301,7 @@ def manage_students():
     user = get_staff_user()
     can_edit_students = can_manage_operations(user)
     selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
 
     selected_session_id = request.args.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
@@ -2161,6 +2330,7 @@ def manage_students():
         batches=batches,
         sessions=sessions,
         selected_session=selected_session,
+        selected_project_category=selected_project_category,
         can_edit_students=can_edit_students
     )
 
@@ -2221,7 +2391,7 @@ def add_student():
     class_name = request.form.get("student_class", "").strip()
     division = request.form.get("division", "").strip()
     roll_no = request.form.get("roll_no", "").strip()
-    batch_id = request.form["batch_id"]
+    batch_id = request.form.get("batch_id", "").strip()
     session_id = request.form["session_id"]
     session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
 
@@ -2229,12 +2399,20 @@ def add_student():
         flash("Select a valid academic session.", "warning")
         return redirect(url_for("admin.manage_students"))
 
-    batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
     selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
+    batch = None
+    if batch_id:
+        batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
 
-    if not batch or batch.get("session_id") != session["_id"] or (batch.get("program") or DEFAULT_PROGRAM) != selected_program:
-        flash("Select a batch from the active academic session.", "warning")
-        return redirect(url_for("admin.manage_students", session=str(session["_id"])))
+        if (
+            not batch
+            or batch.get("session_id") != session["_id"]
+            or (batch.get("program") or DEFAULT_PROGRAM) != selected_program
+            or normalize_project_category(batch.get("project_category"), selected_program) != selected_project_category
+        ):
+            flash("Select a valid batch from the active academic session, or keep it unassigned.", "warning")
+            return redirect(url_for("admin.manage_students", session=str(session["_id"])))
 
     existing = current_app.db.students.find_one({
         "prn": prn,
@@ -2249,6 +2427,8 @@ def add_student():
                 ]
             },
             program_filter_query(selected_program)
+            ,
+            project_category_filter_query(selected_program, selected_project_category)
         ]
     })
 
@@ -2269,6 +2449,8 @@ def add_student():
                 ]
             },
             program_filter_query(selected_program)
+            ,
+            project_category_filter_query(selected_program, selected_project_category)
         ]
     })
 
@@ -2291,8 +2473,9 @@ def add_student():
         "roll_no": roll_no,
         "year": session["name"],
         "session_id": session["_id"],
-        "batch_id": batch["_id"],
+        "batch_id": batch["_id"] if batch else None,
         "program": selected_program,
+        "project_category": selected_project_category,
         "role": "student",
         "password": password,
         "password_changed": False,
@@ -2333,6 +2516,7 @@ def upload_students():
 
     session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
     selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
 
     if not session:
         flash("Selected academic session was not found.", "warning")
@@ -2509,6 +2693,8 @@ def upload_students():
                     ]
                 },
                 program_filter_query(selected_program)
+                ,
+                project_category_filter_query(selected_program, selected_project_category)
             ]
         })
 
@@ -2529,6 +2715,7 @@ def upload_students():
             "year": year,
             "session_id": session["_id"],
             "program": selected_program,
+            "project_category": selected_project_category,
             "batch_id": None,
             "role": "student",
             "password": password,
@@ -2614,6 +2801,7 @@ def assign_students_page(batch_id):
         return redirect(url_for("admin.manage_batches"))
 
     batch_program = (batch.get("program") or DEFAULT_PROGRAM).upper()
+    batch_category = normalize_project_category(batch.get("project_category"), batch_program)
 
     students = list(current_app.db.students.find({
         "$and": [
@@ -2622,6 +2810,7 @@ def assign_students_page(batch_id):
                 "name": batch.get("year")
             }),
             program_filter_query(batch_program),
+            project_category_filter_query(batch_program, batch_category),
             {
                 "$or": [
                     {"batch_id": None},
@@ -2657,11 +2846,12 @@ def save_assigned_students(batch_id):
         return redirect(url_for("admin.manage_batches"))
 
     batch_program = (batch.get("program") or DEFAULT_PROGRAM).upper()
+    batch_category = normalize_project_category(batch.get("project_category"), batch_program)
     normalized_student_ids = [ObjectId(student_id) for student_id in student_ids]
 
     # remove students already in this batch
     current_app.db.students.update_many(
-        {"batch_id": ObjectId(batch_id)},
+        {"batch_id": ObjectId(batch_id), **project_category_filter_query(batch_program, batch_category)},
         {"$set": {"batch_id": None}}
     )
 
@@ -2670,9 +2860,16 @@ def save_assigned_students(batch_id):
         current_app.db.students.update_one(
             {
                 "_id": sid,
-                **program_filter_query(batch_program)
+                **program_filter_query(batch_program),
+                **project_category_filter_query(batch_program, batch_category)
             },
-            {"$set": {"batch_id": ObjectId(batch_id), "program": batch_program}}
+            {
+                "$set": {
+                    "batch_id": ObjectId(batch_id),
+                    "program": batch_program,
+                    "project_category": batch_category
+                }
+            }
         )
  
     mentor = None
@@ -2772,7 +2969,14 @@ def faculty_students():
         "_id": ObjectId(faculty_id)
     })
 
-    batch, _, _ = get_faculty_assigned_batch(ObjectId(current_user.id), request.args.get("session"))
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
+    batch, _, _ = get_faculty_assigned_batch(
+        ObjectId(current_user.id),
+        request.args.get("session"),
+        selected_program,
+        selected_project_category
+    )
 
     if not batch:
         return render_template("faculty/students.html", students=[], batch=None)
@@ -2782,7 +2986,9 @@ def faculty_students():
     }))
 
     for s in students:
-        total = current_app.db.stages.count_documents({})
+        total = current_app.db.stages.count_documents(
+            with_program_scope({}, selected_program, selected_project_category)
+        )
         approved = current_app.db.submissions.count_documents({
             "student_id": s["_id"],
             "status": "approved"
@@ -2849,7 +3055,14 @@ def update_faculty_profile():
 def mentor_submissions():
 
     mentor_id = ObjectId(current_user.id)
-    batch, _, _ = get_faculty_assigned_batch(mentor_id, request.args.get("session"))
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
+    batch, _, _ = get_faculty_assigned_batch(
+        mentor_id,
+        request.args.get("session"),
+        selected_program,
+        selected_project_category
+    )
 
     if not batch:
         return render_template(
@@ -2867,7 +3080,11 @@ def mentor_submissions():
 
     student_map = {str(s["_id"]): s["name"] for s in students}
 
-    stages = list(current_app.db.stages.find())
+    stages = list(
+        current_app.db.stages.find(
+            with_program_scope({}, selected_program, selected_project_category)
+        )
+    )
     stage_map = {str(s["_id"]): s["name"] for s in stages}
 
     student_ids = [s["_id"] for s in students]
@@ -2892,7 +3109,14 @@ def mentor_submissions():
 def mentor_final_projects():
 
     mentor_id = ObjectId(current_user.id)
-    batch, _, _ = get_faculty_assigned_batch(mentor_id, request.args.get("session"))
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
+    batch, _, _ = get_faculty_assigned_batch(
+        mentor_id,
+        request.args.get("session"),
+        selected_program,
+        selected_project_category
+    )
 
     if not batch:
         return render_template(
@@ -2908,7 +3132,10 @@ def mentor_final_projects():
     student_map = {str(student["_id"]): student for student in students}
 
     final_projects = list(
-        current_app.db.final_submissions.find({"student_id": {"$in": student_ids}}).sort("submitted_at", -1)
+        current_app.db.final_submissions.find({
+            "student_id": {"$in": student_ids},
+            **project_category_filter_query(selected_program, selected_project_category)
+        }).sort("submitted_at", -1)
     )
 
     return render_template(
@@ -2925,13 +3152,21 @@ def mentor_final_projects():
 @reports_access_required
 def admin_final_projects():
 
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
     selected_session_id = request.args.get("session")
     sessions, selected_session = get_selected_session(selected_session_id)
     final_projects = list(
         current_app.db.final_submissions.find({
-            "$or": [
-                {"session_id": selected_session["_id"]},
-                {"session_id": {"$exists": False}}
+            "$and": [
+                {
+                    "$or": [
+                        {"session_id": selected_session["_id"]},
+                        {"session_id": {"$exists": False}}
+                    ]
+                },
+                program_filter_query(selected_program),
+                project_category_filter_query(selected_program, selected_project_category)
             ]
         }).sort("submitted_at", -1)
     )
@@ -2939,7 +3174,12 @@ def admin_final_projects():
     student_map = {}
     mentor_map = {}
     batch_map = {}
-    current_admin_batch, _, _ = get_faculty_assigned_batch(ObjectId(current_user.id), selected_session_id)
+    current_admin_batch, _, _ = get_faculty_assigned_batch(
+        ObjectId(current_user.id),
+        selected_session_id,
+        selected_program,
+        selected_project_category
+    )
     reviewable_batch_id = str(current_admin_batch["_id"]) if current_admin_batch else None
 
     for item in final_projects:
@@ -2964,7 +3204,8 @@ def admin_final_projects():
         mentor_map=mentor_map,
         batch_map=batch_map,
         sessions=sessions,
-        selected_session=selected_session
+        selected_session=selected_session,
+        selected_project_category=selected_project_category
     )
 
 
@@ -3226,6 +3467,7 @@ def _sync_shared_fields_from_presentation1(student, session_doc, project_title, 
 
 def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
     selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
     students_query = session_filter(selected_session)
     selected_batch = None
 
@@ -3234,7 +3476,8 @@ def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
             try:
                 selected_batch = current_app.db.batches.find_one({
                     "_id": ObjectId(selected_batch_id),
-                    **program_filter_query(selected_program)
+                    **program_filter_query(selected_program),
+                    **project_category_filter_query(selected_program, selected_project_category)
                 })
             except Exception:
                 selected_batch = None
@@ -3243,18 +3486,20 @@ def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
                     "$and": [
                         session_filter(selected_session),
                         program_filter_query(selected_program),
+                        project_category_filter_query(selected_program, selected_project_category),
                         {"batch_id": selected_batch["_id"]}
                     ]
                 }
             else:
-                students_query = with_program_scope(session_filter(selected_session), selected_program)
+                students_query = with_program_scope(session_filter(selected_session), selected_program, selected_project_category)
         else:
-            students_query = with_program_scope(session_filter(selected_session), selected_program)
+            students_query = with_program_scope(session_filter(selected_session), selected_program, selected_project_category)
     else:
         mentor_batch, _, _ = get_faculty_assigned_batch(
             user["_id"],
             str(selected_session["_id"]),
-            selected_program
+            selected_program,
+            selected_project_category
         )
         if not mentor_batch:
             return [], [], None
@@ -3263,6 +3508,7 @@ def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
             "$and": [
                 session_filter(selected_session),
                 program_filter_query(selected_program),
+                project_category_filter_query(selected_program, selected_project_category),
                 {"batch_id": mentor_batch["_id"]}
             ]
         }

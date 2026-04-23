@@ -9,7 +9,8 @@
         <div>
             <h4>Academic Sessions</h4>
             <p class="section-subtitle">Choose the session before setting one shared deadline plan for all batches in
-                that academic session for <strong>{{ selected_program }}</strong>.</p>
+                that academic session for <strong>{{ selected_program }}</strong>{% if selected_program == "MBA" %} •
+                <strong>{{ selected_project_category_label }}</strong>{% endif %}.</p>
         </div>
 
         <div class="session-toolbar-actions">
@@ -42,8 +43,9 @@
 <!-- Stage Table -->
 <div class="card">
     <h4>Drag & Drop to Reorder</h4>
-    <p class="section-subtitle">The documents and deadlines below apply to every <strong>{{ selected_program }}</strong> batch inside <strong>{{
-            selected_session.name }}</strong>.</p>
+    <p class="section-subtitle">The documents and deadlines below apply to every <strong>{{ selected_program }}</strong>
+        {% if selected_program == "MBA" %} • <strong>{{ selected_project_category_label }}</strong>{% endif %}
+        batch inside <strong>{{ selected_session.name }}</strong>.</p>
 
     <table class="custom-table">
         <thead>
@@ -179,6 +181,9 @@ document.addEventListener("DOMContentLoaded", function () {
             try {
                 const response = await fetch(this.action, {
                     method: 'POST',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
                     body: formData
                 });
                 

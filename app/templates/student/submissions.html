@@ -9,7 +9,11 @@
 <div class="dashboard-section-head">
     <div>
         <h3 class="section-title">Project Stages</h3>
-        <span>Upload chapter-wise progress documents here. Use the Final Project page for your complete project ZIP submission.</span>
+        <span>
+            Upload chapter-wise progress documents here for
+            <strong>{{ selected_project_category.replace('_', ' ').title() if selected_project_category else 'Mini Project' }}</strong>.
+            Use the Final Project page for your complete project ZIP submission.
+        </span>
     </div>
     <a href="{{ url_for('student.final_project_page') }}" class="btn-edit">
         <i class="fas fa-folder-tree"></i> Open Final Project Page
@@ -197,7 +201,7 @@ document.addEventListener("DOMContentLoaded", function(){
   });
 
   // AJAX Upload
-  document.querySelectorAll('.upload-box form').forEach(function(form) {
+  document.querySelectorAll('.upload-box').forEach(function(form) {
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
       
@@ -217,6 +221,9 @@ document.addEventListener("DOMContentLoaded", function(){
       try {
         const response = await fetch(this.action, {
           method: 'POST',
+          headers: {
+            'Accept': 'application/json'
+          },
           body: formData
         });
         

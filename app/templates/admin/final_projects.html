@@ -7,7 +7,10 @@
     <div>
         <span class="dashboard-kicker">Final Project Oversight</span>
         <h3>Track every final project in one place</h3>
-        <p class="section-subtitle">Download project ZIP files, open GitHub or live demo links, and monitor review status across all batches.</p>
+        <p class="section-subtitle">
+            Download project ZIP files, open GitHub or live demo links, and monitor review status across all batches.
+            {% if selected_program == "MBA" %}<strong>Current category: {{ selected_project_category_label }}</strong>.{% endif %}
+        </p>
     </div>
 
     <form method="GET" class="session-toolbar">
@@ -27,6 +30,7 @@
 <th>Project</th>
 <th>Batch</th>
 <th>Mentor</th>
+<th>Category</th>
 <th>Archive</th>
 <th>Links</th>
 <th>Status</th>
@@ -49,6 +53,7 @@
 </td>
 <td>{{ batch.name if batch else "Not Assigned" }}</td>
 <td>{{ mentor.name if mentor else "Not Assigned" }}</td>
+<td>{{ (item.get('project_category') or selected_project_category or 'mini_project').replace('_', ' ').title() }}</td>
 <td>
 {% if item.archive_file %}
 <a class="btn-view" href="{{ url_for('admin.download_file', filename=item.archive_file) }}">
@@ -95,7 +100,7 @@
 </tr>
 {% else %}
 <tr>
-<td colspan="8" class="text-muted">No final projects found for the selected academic session.</td>
+<td colspan="9" class="text-muted">No final projects found for the selected academic session.</td>
 </tr>
 {% endfor %}
 </tbody>

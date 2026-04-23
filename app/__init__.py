@@ -45,6 +45,20 @@ def create_app():
 
     @app.context_processor
     def inject_notifications():
+        project_category_map = {
+            "mini_project": "Mini Project",
+            "field_project": "Field Project",
+            "major_project": "Major Project",
+            "desk_research": "Desk Research",
+            "research_project": "Research Project"
+        }
+
+        def normalize_project_category(value, selected_program):
+            if selected_program != "MBA":
+                return "mini_project"
+            normalized = str(value or "").strip().lower().replace(" ", "_")
+            return normalized if normalized in project_category_map else "mini_project"
+
         def normalize_program(value):
             normalized = str(value or "").strip().upper()
             return normalized if normalized in {"MCA", "MBA"} else "MCA"
@@ -123,6 +137,12 @@ def create_app():
                 selected_program = "MCA"
             session["selected_program"] = selected_program
             can_switch_program = True
+            selected_project_category = normalize_project_category(
+                session.get("selected_project_category"),
+                selected_program
+            )
+            session["selected_project_category"] = selected_project_category
+            can_switch_project_category = selected_program == "MBA"
 
             if current_user.role in ["admin", "faculty"]:
                 current_user_record = current_app.db.users.find_one({"_id": ObjectId(current_user.id)})
@@ -131,6 +151,12 @@ def create_app():
                     selected_program = locked_program
                     session["selected_program"] = selected_program
                     can_switch_program = False
+                selected_project_category = normalize_project_category(
+                    session.get("selected_project_category"),
+                    selected_program
+                )
+                session["selected_project_category"] = selected_project_category
+                can_switch_project_category = selected_program == "MBA"
                 current_designation = normalize_designation(current_user_record, selected_program)
                 can_manage_designations = current_designation == "director"
                 can_manage_operations = current_designation in {"project_coordinator"}
@@ -154,8 +180,12 @@ def create_app():
                 can_view_student_directory=can_view_student_directory,
                 can_access_mentor_tools=can_access_mentor_tools,
                 selected_program=selected_program,
+                selected_project_category=selected_project_category,
+                selected_project_category_label=project_category_map.get(selected_project_category, "Mini Project"),
                 can_switch_program=can_switch_program,
-                program_options=["MCA", "MBA"]
+                can_switch_project_category=can_switch_project_category,
+                program_options=["MCA", "MBA"],
+                project_category_options=list(project_category_map.items())
             )
 
         return dict(
@@ -170,8 +200,12 @@ def create_app():
             can_view_student_directory=False,
             can_access_mentor_tools=False,
             selected_program="MCA",
+            selected_project_category="mini_project",
+            selected_project_category_label="Mini Project",
             can_switch_program=False,
-            program_options=["MCA", "MBA"]
+            can_switch_project_category=False,
+            program_options=["MCA", "MBA"],
+            project_category_options=list(project_category_map.items())
         )
 
     @app.errorhandler(403)

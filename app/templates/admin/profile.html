@@ -1,14 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-{% set admin_designation_key = (admin.designation or ('director' if admin.role == 'admin' else 'faculty'))|lower|replace(' ', '_') %}
-{% set designation_labels = {
-    'director': 'Director',
-    'project_coordinator': 'Project Coordinator',
-    'academic_coordinator': 'Academic Coordinator',
-    'hod': 'HOD',
-    'faculty': 'Faculty'
-} %}
-{% set admin_designation_label = designation_labels.get(admin_designation_key, 'Faculty') %}
+{% set admin_designation_label = admin_role_label or 'Director' %}
 
 <h2 class="page-title">Admin Profile</h2>
 

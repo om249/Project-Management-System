@@ -8,7 +8,10 @@
     <div class="dashboard-section-head">
         <div>
             <h3 class="section-title">Project Delivery</h3>
-            <span>Upload your project ZIP file and optionally share GitHub or live demo links for final review.</span>
+            <span>
+                Upload your <strong>{{ selected_project_category.replace('_', ' ').title() if selected_project_category else 'Mini Project' }}</strong>
+                ZIP file and optionally share GitHub or live demo links for final review.
+            </span>
         </div>
     </div>
 

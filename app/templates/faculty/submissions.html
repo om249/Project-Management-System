@@ -2,6 +2,9 @@
 {% block content %}
 
 <h2 class="page-title">Student Submissions</h2>
+{% if selected_program == "MBA" %}
+<p class="section-subtitle">Current category: <strong>{{ selected_project_category_label }}</strong></p>
+{% endif %}
 
 <div class="card">
 
@@ -18,6 +21,7 @@
 <tr>
 <th>Student</th>
 <th>Stage</th>
+<th>Category</th>
 <th>File</th>
 <th>Submitted On</th>
 <th>Status</th>
@@ -39,6 +43,10 @@
 <td>
 <i class="fas fa-layer-group"></i>
 {{ stage_map.get(sub.stage_id|string) }}
+</td>
+
+<td>
+{{ (sub.get('project_category') or selected_project_category or 'mini_project').replace('_', ' ').title() }}
 </td>
 
 <td>

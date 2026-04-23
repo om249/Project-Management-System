@@ -7,11 +7,14 @@
 
 <div class="admin-hero card">
     <div class="admin-hero-copy">
-        <span class="dashboard-kicker">Admin Control Center</span>
+        <span class="dashboard-kicker">{{ selected_program }} Control Center</span>
+        {% if selected_program == "MBA" %}
+        <span class="table-subcopy">{{ selected_project_category_label }}</span>
+        {% endif %}
         <h3>Monitor the platform from one place</h3>
         <p>
             Keep track of batches, faculty allocation, student scale, and
-            submission flow with a cleaner administrative overview.
+            submission flow for {{ selected_program }} with a cleaner administrative overview.
         </p>
 
         <div class="dashboard-action-row">

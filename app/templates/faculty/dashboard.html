@@ -8,8 +8,11 @@
 
 <div class="mentor-hero card">
     <div class="mentor-hero-copy">
-        <span class="dashboard-kicker">Faculty Overview</span>
-        <h3>{{ batch.name if batch else "No Batch Assigned Yet" }}</h3>
+        <span class="dashboard-kicker">{{ dashboard_scope_label if dashboard_scope_label else "Faculty Overview" }}</span>
+        {% if selected_program == "MBA" %}
+        <span class="table-subcopy">{{ selected_project_category_label }}</span>
+        {% endif %}
+        <h3>{{ batch.name if batch else (selected_program ~ " Program Overview") }}</h3>
         <p>
             Review project activity, monitor upcoming deadlines, and keep your
             mentoring workflow focused on submissions that need attention.
@@ -28,7 +31,7 @@
     <div class="mentor-hero-side">
         <div class="mentor-mini-card">
             <span>Assigned Batch</span>
-            <strong>{{ batch.name if batch else "Not Assigned" }}</strong>
+            <strong>{{ batch.name if batch else (selected_program ~ " Scope") }}</strong>
         </div>
         <div class="mentor-mini-card">
             <span>Tracked Stages</span>
