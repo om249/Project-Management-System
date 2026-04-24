@@ -6,15 +6,34 @@
 <section class="evaluation-page">
 <div class="card evaluation-filters-card">
     <div class="session-toolbar">
-        <div>
+        <div class="evaluation-intro">
             <h4>Internship/Project Evaluation</h4>
-            <p class="section-subtitle">Sheet format aligned to your shared evaluation structure (without Offer Letter) for <strong>{{ selected_program }}</strong>.</p>
+            <p class="section-subtitle">Sheet format aligned to your shared evaluation structure for <strong>{{ selected_program }}</strong>.</p>
+            {% if selected_eval_type == 'desk_research_mba' %}
+            <div class="desk-research-note">
+                <strong>Desk Research Criteria (50 Marks)</strong>
+                <div class="desk-research-note-grid">
+                    <span><b>C1:</b> Project Objectives (10)</span>
+                    <span><b>C2:</b> Quality of Analysis & Research (10)</span>
+                    <span><b>C3:</b> Problem Solving & Decision Making (10)</span>
+                    <span><b>C4:</b> Innovation & Impact (10)</span>
+                    <span><b>C5:</b> Reflection (10)</span>
+                </div>
+            </div>
+            {% endif %}
         </div>
         <div class="session-toolbar-actions">
             <form method="GET" action="{{ url_for('admin.evaluation_sheet') }}" class="session-filter-form" id="evaluationFiltersForm">
                 <select name="eval_type" onchange="this.form.submit()">
+                    {% if selected_program == "MBA" and selected_project_category == "desk_research" %}
+                    <option value="desk_research_mba" selected>Desk Research MBA</option>
+                    {% else %}
                     <option value="presentation1" {% if selected_eval_type == 'presentation1' %}selected{% endif %}>Presentation 1</option>
                     <option value="presentation2" {% if selected_eval_type == 'presentation2' %}selected{% endif %}>Presentation 2</option>
+                    {% if selected_program == "MCA" %}
+                    <option value="final_mca" {% if selected_eval_type == 'final_mca' %}selected{% endif %}>MCA Final</option>
+                    {% endif %}
+                    {% endif %}
                 </select>
 
                 <select name="session" onchange="this.form.submit()">
@@ -77,11 +96,26 @@
                     <th>Chapter 1 (10)</th>
                     <th>Chapter 2 (10)</th>
                     <th>Total (20)</th>
-                    {% else %}
+                    {% elif selected_eval_type == 'presentation2' %}
                     <th>Chapter 3 (10)</th>
                     <th>Chapter 4 (10)</th>
                     <th>Project execution/demo/github link (10)</th>
                     <th>Total (30)</th>
+                    {% elif selected_eval_type == 'final_mca' %}
+                    <th>System Design & Analysis (10)</th>
+                    <th>Coding & Implementation (10)</th>
+                    <th>Testing & Results (10)</th>
+                    <th>Report & Documentation (10)</th>
+                    <th>Viva & Presentation Skills (10)</th>
+                    <th>Total (50)</th>
+                    {% else %}
+                    <th>C1 (10)</th>
+                    <th>C2 (10)</th>
+                    <th>C3 (10)</th>
+                    <th>C4 (10)</th>
+                    <th>C5 (10)</th>
+                    <th>Total (50)</th>
+                    <th>Date</th>
                     {% endif %}
                     <th>Signature</th>
                     {% if can_edit_evaluation %}<th>Action</th>{% endif %}
@@ -91,10 +125,15 @@
                 {% for student in students %}
                 {% set row = evaluation_map.get(student._id|string) %}
                 {% set is_saved_row = row is not none %}
+                {% set effective_guide = row.get('guide_name') if row and row.get('guide_name') and row.get('guide_name') != 'Not Assigned' else guide_map.get(student._id|string, 'Not Assigned') %}
                 {% if selected_eval_type == 'presentation1' %}
                 {% set student_total = row.get('total', ((row.get('chapter1', 0) or 0) + (row.get('chapter2', 0) or 0))) if row else 0 %}
-                {% else %}
+                {% elif selected_eval_type == 'presentation2' %}
                 {% set student_total = row.get('total', ((row.get('chapter3', 0) or 0) + (row.get('chapter4', 0) or 0) + (row.get('execution_demo', 0) or 0))) if row else 0 %}
+                {% elif selected_eval_type == 'final_mca' %}
+                {% set student_total = row.get('total', ((row.get('system_design_analysis', 0) or 0) + (row.get('coding_implementation', 0) or 0) + (row.get('testing_results', 0) or 0) + (row.get('report_documentation', 0) or 0) + (row.get('viva_presentation', 0) or 0))) if row else 0 %}
+                {% else %}
+                {% set student_total = row.get('total', ((row.get('c1', 0) or 0) + (row.get('c2', 0) or 0) + (row.get('c3', 0) or 0) + (row.get('c4', 0) or 0) + (row.get('c5', 0) or 0))) if row else 0 %}
                 {% endif %}
                 <tr class="evaluation-row {% if is_saved_row %}is-locked{% else %}is-editing{% endif %}" data-row-id="{{ student._id }}">
                     <td>{{ loop.index }}</td>
@@ -102,11 +141,11 @@
                     <td>{{ student.get('name') }}</td>
                     <td>
                         {% if can_edit_evaluation %}
-                        <span class="eval-view-value">{{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}</span>
+                        <span class="eval-view-value">{{ effective_guide }}</span>
                         <input type="text"
                                class="eval-edit-field"
                                name="guide_name_{{ student._id }}"
-                               value="{{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}"
+                               value="{{ effective_guide }}"
                                {% if is_saved_row %}disabled{% endif %}>
                         <input type="hidden"
                                class="eval-edit-flag"
@@ -114,7 +153,7 @@
                                value="{{ student._id }}"
                                {% if is_saved_row %}disabled{% endif %}>
                         {% else %}
-                        {{ row.get('guide_name') if row else guide_map.get(student._id|string, 'Not Assigned') }}
+                        {{ effective_guide }}
                         {% endif %}
                     </td>
                     <td>
@@ -144,30 +183,26 @@
                         {% if can_edit_evaluation %}
                             {% if selected_eval_type == 'presentation1' %}
                             <span class="eval-view-value">{{ row.get('chapter1', 0) if row else 0 }}</span>
-                            <input type="number"
-                                   class="eval-edit-field"
-                                   min="0"
-                                   max="10"
-                                   step="0.01"
-                                   name="chapter1_{{ student._id }}"
-                                   value="{{ row.get('chapter1', 0) if row else 0 }}"
-                                   {% if is_saved_row %}disabled{% endif %}>
-                            {% else %}
+                            <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="chapter1_{{ student._id }}" value="{{ row.get('chapter1', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                            {% elif selected_eval_type == 'presentation2' %}
                             <span class="eval-view-value">{{ row.get('chapter3', 0) if row else 0 }}</span>
-                            <input type="number"
-                                   class="eval-edit-field"
-                                   min="0"
-                                   max="10"
-                                   step="0.01"
-                                   name="chapter3_{{ student._id }}"
-                                   value="{{ row.get('chapter3', 0) if row else 0 }}"
-                                   {% if is_saved_row %}disabled{% endif %}>
+                            <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="chapter3_{{ student._id }}" value="{{ row.get('chapter3', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                            {% elif selected_eval_type == 'final_mca' %}
+                            <span class="eval-view-value">{{ row.get('system_design_analysis', 0) if row else 0 }}</span>
+                            <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="system_design_analysis_{{ student._id }}" value="{{ row.get('system_design_analysis', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                            {% else %}
+                            <span class="eval-view-value">{{ row.get('c1', 0) if row else 0 }}</span>
+                            <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="c1_{{ student._id }}" value="{{ row.get('c1', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
                             {% endif %}
                         {% else %}
                             {% if selected_eval_type == 'presentation1' %}
                             {{ row.get('chapter1', 0) if row else 0 }}
-                            {% else %}
+                            {% elif selected_eval_type == 'presentation2' %}
                             {{ row.get('chapter3', 0) if row else 0 }}
+                            {% elif selected_eval_type == 'final_mca' %}
+                            {{ row.get('system_design_analysis', 0) if row else 0 }}
+                            {% else %}
+                            {{ row.get('c1', 0) if row else 0 }}
                             {% endif %}
                         {% endif %}
                     </td>
@@ -175,47 +210,94 @@
                         {% if can_edit_evaluation %}
                             {% if selected_eval_type == 'presentation1' %}
                             <span class="eval-view-value">{{ row.get('chapter2', 0) if row else 0 }}</span>
-                            <input type="number"
-                                   class="eval-edit-field"
-                                   min="0"
-                                   max="10"
-                                   step="0.01"
-                                   name="chapter2_{{ student._id }}"
-                                   value="{{ row.get('chapter2', 0) if row else 0 }}"
-                                   {% if is_saved_row %}disabled{% endif %}>
-                            {% else %}
+                            <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="chapter2_{{ student._id }}" value="{{ row.get('chapter2', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                            {% elif selected_eval_type == 'presentation2' %}
                             <span class="eval-view-value">{{ row.get('chapter4', 0) if row else 0 }}</span>
-                            <input type="number"
-                                   class="eval-edit-field"
-                                   min="0"
-                                   max="10"
-                                   step="0.01"
-                                   name="chapter4_{{ student._id }}"
-                                   value="{{ row.get('chapter4', 0) if row else 0 }}"
-                                   {% if is_saved_row %}disabled{% endif %}>
+                            <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="chapter4_{{ student._id }}" value="{{ row.get('chapter4', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                            {% elif selected_eval_type == 'final_mca' %}
+                            <span class="eval-view-value">{{ row.get('coding_implementation', 0) if row else 0 }}</span>
+                            <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="coding_implementation_{{ student._id }}" value="{{ row.get('coding_implementation', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                            {% else %}
+                            <span class="eval-view-value">{{ row.get('c2', 0) if row else 0 }}</span>
+                            <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="c2_{{ student._id }}" value="{{ row.get('c2', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
                             {% endif %}
                         {% else %}
                             {% if selected_eval_type == 'presentation1' %}
                             {{ row.get('chapter2', 0) if row else 0 }}
-                            {% else %}
+                            {% elif selected_eval_type == 'presentation2' %}
                             {{ row.get('chapter4', 0) if row else 0 }}
+                            {% elif selected_eval_type == 'final_mca' %}
+                            {{ row.get('coding_implementation', 0) if row else 0 }}
+                            {% else %}
+                            {{ row.get('c2', 0) if row else 0 }}
                             {% endif %}
                         {% endif %}
                     </td>
-                    {% if selected_eval_type != 'presentation1' %}
+                    {% if selected_eval_type == 'presentation2' %}
                     <td>
                         {% if can_edit_evaluation %}
                         <span class="eval-view-value">{{ row.get('execution_demo', 0) if row else 0 }}</span>
-                        <input type="number"
-                               class="eval-edit-field"
-                               min="0"
-                               max="10"
-                               step="0.01"
-                               name="execution_demo_{{ student._id }}"
-                               value="{{ row.get('execution_demo', 0) if row else 0 }}"
-                               {% if is_saved_row %}disabled{% endif %}>
+                        <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="execution_demo_{{ student._id }}" value="{{ row.get('execution_demo', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
                         {% else %}
                         {{ row.get('execution_demo', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    {% elif selected_eval_type == 'final_mca' %}
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <span class="eval-view-value">{{ row.get('testing_results', 0) if row else 0 }}</span>
+                        <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="testing_results_{{ student._id }}" value="{{ row.get('testing_results', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                        {% else %}
+                        {{ row.get('testing_results', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <span class="eval-view-value">{{ row.get('report_documentation', 0) if row else 0 }}</span>
+                        <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="report_documentation_{{ student._id }}" value="{{ row.get('report_documentation', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                        {% else %}
+                        {{ row.get('report_documentation', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <span class="eval-view-value">{{ row.get('viva_presentation', 0) if row else 0 }}</span>
+                        <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="viva_presentation_{{ student._id }}" value="{{ row.get('viva_presentation', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                        {% else %}
+                        {{ row.get('viva_presentation', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    {% elif selected_eval_type == 'desk_research_mba' %}
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <span class="eval-view-value">{{ row.get('c3', 0) if row else 0 }}</span>
+                        <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="c3_{{ student._id }}" value="{{ row.get('c3', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                        {% else %}
+                        {{ row.get('c3', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <span class="eval-view-value">{{ row.get('c4', 0) if row else 0 }}</span>
+                        <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="c4_{{ student._id }}" value="{{ row.get('c4', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                        {% else %}
+                        {{ row.get('c4', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <span class="eval-view-value">{{ row.get('c5', 0) if row else 0 }}</span>
+                        <input type="number" class="eval-edit-field" min="0" max="10" step="0.01" name="c5_{{ student._id }}" value="{{ row.get('c5', 0) if row else 0 }}" {% if is_saved_row %}disabled{% endif %}>
+                        {% else %}
+                        {{ row.get('c5', 0) if row else 0 }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if can_edit_evaluation %}
+                        <span class="eval-view-value">{{ row.get('evaluation_date', '-') if row else '-' }}</span>
+                        <input type="date" class="eval-edit-field" name="evaluation_date_{{ student._id }}" value="{{ row.get('evaluation_date', '') if row else '' }}" {% if is_saved_row %}disabled{% endif %}>
+                        {% else %}
+                        {{ row.get('evaluation_date', '-') if row else '-' }}
                         {% endif %}
                     </td>
                     {% endif %}
@@ -246,9 +328,14 @@
                 </tr>
                 {% else %}
                 <tr>
+                    {% if selected_eval_type == 'presentation1' %}
                     {% set empty_colspan = 11 if can_edit_evaluation else 10 %}
-                    {% if selected_eval_type != 'presentation1' %}
-                    {% set empty_colspan = empty_colspan + 1 %}
+                    {% elif selected_eval_type == 'presentation2' %}
+                    {% set empty_colspan = 12 if can_edit_evaluation else 11 %}
+                    {% elif selected_eval_type == 'final_mca' %}
+                    {% set empty_colspan = 14 if can_edit_evaluation else 13 %}
+                    {% else %}
+                    {% set empty_colspan = 15 if can_edit_evaluation else 14 %}
                     {% endif %}
                     <td colspan="{{ empty_colspan }}" class="text-center text-muted">
                         No students available for this filter.
@@ -316,10 +403,23 @@ document.addEventListener("DOMContentLoaded", function () {
             if (evalType === "presentation1") {
                 payload.chapter1 = getValue(`input[name="chapter1_${rowId}"]`) || "0";
                 payload.chapter2 = getValue(`input[name="chapter2_${rowId}"]`) || "0";
-            } else {
+            } else if (evalType === "presentation2") {
                 payload.chapter3 = getValue(`input[name="chapter3_${rowId}"]`) || "0";
                 payload.chapter4 = getValue(`input[name="chapter4_${rowId}"]`) || "0";
                 payload.execution_demo = getValue(`input[name="execution_demo_${rowId}"]`) || "0";
+            } else if (evalType === "final_mca") {
+                payload.system_design_analysis = getValue(`input[name="system_design_analysis_${rowId}"]`) || "0";
+                payload.coding_implementation = getValue(`input[name="coding_implementation_${rowId}"]`) || "0";
+                payload.testing_results = getValue(`input[name="testing_results_${rowId}"]`) || "0";
+                payload.report_documentation = getValue(`input[name="report_documentation_${rowId}"]`) || "0";
+                payload.viva_presentation = getValue(`input[name="viva_presentation_${rowId}"]`) || "0";
+            } else {
+                payload.c1 = getValue(`input[name="c1_${rowId}"]`) || "0";
+                payload.c2 = getValue(`input[name="c2_${rowId}"]`) || "0";
+                payload.c3 = getValue(`input[name="c3_${rowId}"]`) || "0";
+                payload.c4 = getValue(`input[name="c4_${rowId}"]`) || "0";
+                payload.c5 = getValue(`input[name="c5_${rowId}"]`) || "0";
+                payload.evaluation_date = getValue(`input[name="evaluation_date_${rowId}"]`) || "";
             }
 
             Object.entries(payload).forEach(function ([key, value]) {

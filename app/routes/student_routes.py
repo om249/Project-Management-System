@@ -24,6 +24,17 @@ PROJECT_CATEGORY_LABELS = {
     "research_project": "Research Project"
 }
 
+EVALUATION_TYPE_PRESENTATION_1 = "presentation1"
+EVALUATION_TYPE_PRESENTATION_2 = "presentation2"
+EVALUATION_TYPE_FINAL_MCA = "final_mca"
+EVALUATION_TYPE_DESK_RESEARCH_MBA = "desk_research_mba"
+EVALUATION_TYPES = {
+    EVALUATION_TYPE_PRESENTATION_1,
+    EVALUATION_TYPE_PRESENTATION_2,
+    EVALUATION_TYPE_FINAL_MCA,
+    EVALUATION_TYPE_DESK_RESEARCH_MBA
+}
+
 
 def normalize_project_category(value, program=None):
     selected_program = str(program or "MCA").strip().upper()
@@ -114,6 +125,36 @@ def is_valid_web_link(value):
 
     parsed = urlparse(value.strip())
     return parsed.scheme in ["http", "https"] and bool(parsed.netloc)
+
+
+def _normalize_evaluation_type(value, program, project_category=None):
+    normalized_program = normalize_program(program)
+    normalized_category = str(project_category or "").strip().lower()
+    if normalized_program == "MBA" and normalized_category == "desk_research":
+        return EVALUATION_TYPE_DESK_RESEARCH_MBA
+
+    normalized = str(value or "").strip().lower()
+    if normalized not in EVALUATION_TYPES:
+        return EVALUATION_TYPE_PRESENTATION_2
+    if normalized_program != "MCA" and normalized == EVALUATION_TYPE_FINAL_MCA:
+        return EVALUATION_TYPE_PRESENTATION_2
+    if normalized != EVALUATION_TYPE_DESK_RESEARCH_MBA:
+        return normalized
+    if normalized_program == "MBA" and str(project_category or "").strip().lower() == "desk_research":
+        return normalized
+    return EVALUATION_TYPE_PRESENTATION_2
+
+
+def _evaluation_type_query(eval_type):
+    normalized_type = str(eval_type or "").strip().lower()
+    if normalized_type == EVALUATION_TYPE_PRESENTATION_2:
+        return {"$or": [{"evaluation_type": EVALUATION_TYPE_PRESENTATION_2}, {"evaluation_type": {"$exists": False}}]}
+    return {"evaluation_type": normalized_type}
+
+
+def normalize_program(value):
+    normalized = str(value or "MCA").strip().upper()
+    return normalized if normalized in {"MCA", "MBA"} else "MCA"
 
 
 def save_final_project_archive(file_storage, student_id):
@@ -475,27 +516,38 @@ def submissions():
 @role_required("student")
 def evaluation_sheet():
     student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
+    student_program = normalize_program((student or {}).get("program"))
+    batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student and student.get("batch_id") else None
+    student_project_category = normalize_project_category((batch or {}).get("project_category") or (student or {}).get("project_category"), student_program)
+    selected_eval_type = _normalize_evaluation_type(request.args.get("eval_type"), student_program, student_project_category)
     evaluation = None
 
     if student:
         evaluation = current_app.db.evaluations.find_one(
             {
                 "student_id": student["_id"],
-                "session_id": student.get("session_id")
+                "session_id": student.get("session_id"),
+                **_evaluation_type_query(selected_eval_type)
             },
             sort=[("updated_at", -1)]
         )
 
         if not evaluation:
             evaluation = current_app.db.evaluations.find_one(
-                {"student_id": student["_id"]},
+                {
+                    "student_id": student["_id"],
+                    **_evaluation_type_query(selected_eval_type)
+                },
                 sort=[("updated_at", -1)]
             )
 
     return render_template(
         "student/evaluation.html",
         student=student,
-        evaluation=evaluation
+        evaluation=evaluation,
+        selected_eval_type=selected_eval_type,
+        student_program=student_program,
+        student_project_category=student_project_category
     )
 
 

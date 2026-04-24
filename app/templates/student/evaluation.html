@@ -9,6 +9,19 @@
             <h3 class="section-title">Internship / Project Evaluation Sheet</h3>
             <span>View-only evaluation details shared by your evaluator.</span>
         </div>
+        <form method="GET" action="{{ url_for('student.evaluation_sheet') }}" class="session-filter-form">
+            <select name="eval_type" onchange="this.form.submit()">
+                {% if student_program == "MBA" and student_project_category == "desk_research" %}
+                <option value="desk_research_mba" selected>Desk Research MBA</option>
+                {% else %}
+                <option value="presentation1" {% if selected_eval_type == 'presentation1' %}selected{% endif %}>Presentation 1</option>
+                <option value="presentation2" {% if selected_eval_type == 'presentation2' %}selected{% endif %}>Presentation 2</option>
+                {% if student_program == "MCA" %}
+                <option value="final_mca" {% if selected_eval_type == 'final_mca' %}selected{% endif %}>MCA Final</option>
+                {% endif %}
+                {% endif %}
+            </select>
+        </form>
     </div>
 
     <div class="table-scroll-wrap">
@@ -20,10 +33,33 @@
                     <th>Guide Name</th>
                     <th>Project Title</th>
                     <th>Synopsis Status</th>
+                    {% if selected_eval_type == 'presentation1' %}
+                    <th>Chapter 1 (10)</th>
+                    <th>Chapter 2 (10)</th>
+                    <th>Total (20)</th>
+                    {% elif selected_eval_type == 'presentation2' %}
                     <th>Chapter 3 (10)</th>
                     <th>Chapter 4 (10)</th>
                     <th>Execution / Demo / GitHub (10)</th>
                     <th>Total (30)</th>
+                    {% else %}
+                    {% if selected_eval_type == 'final_mca' %}
+                    <th>System Design & Analysis (10)</th>
+                    <th>Coding & Implementation (10)</th>
+                    <th>Testing & Results (10)</th>
+                    <th>Report & Documentation (10)</th>
+                    <th>Viva & Presentation Skills (10)</th>
+                    <th>Total (50)</th>
+                    {% else %}
+                    <th>C1 (10)</th>
+                    <th>C2 (10)</th>
+                    <th>C3 (10)</th>
+                    <th>C4 (10)</th>
+                    <th>C5 (10)</th>
+                    <th>Total (50)</th>
+                    <th>Date</th>
+                    {% endif %}
+                    {% endif %}
                     <th>Signature</th>
                 </tr>
             </thead>
@@ -34,14 +70,37 @@
                     <td>{{ evaluation.get('guide_name', '-') if evaluation else '-' }}</td>
                     <td>{{ evaluation.get('project_title', '-') if evaluation else '-' }}</td>
                     <td>{{ evaluation.get('synopsis_status', 'No') if evaluation else 'No' }}</td>
+                    {% if selected_eval_type == 'presentation1' %}
+                    <td>{{ evaluation.get('chapter1', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('chapter2', 0) if evaluation else 0 }}</td>
+                    {% elif selected_eval_type == 'presentation2' %}
                     <td>{{ evaluation.get('chapter3', 0) if evaluation else 0 }}</td>
                     <td>{{ evaluation.get('chapter4', 0) if evaluation else 0 }}</td>
                     <td>{{ evaluation.get('execution_demo', 0) if evaluation else 0 }}</td>
+                    {% else %}
+                    {% if selected_eval_type == 'final_mca' %}
+                    <td>{{ evaluation.get('system_design_analysis', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('coding_implementation', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('testing_results', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('report_documentation', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('viva_presentation', 0) if evaluation else 0 }}</td>
+                    {% else %}
+                    <td>{{ evaluation.get('c1', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('c2', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('c3', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('c4', 0) if evaluation else 0 }}</td>
+                    <td>{{ evaluation.get('c5', 0) if evaluation else 0 }}</td>
+                    <td><strong>{{ evaluation.get('total', 0) if evaluation else 0 }}</strong></td>
+                    <td>{{ evaluation.get('evaluation_date', '-') if evaluation else '-' }}</td>
+                    {% endif %}
+                    {% endif %}
+                    {% if selected_eval_type != 'desk_research_mba' %}
                     <td>
                         <strong>
                             {{ evaluation.get('total', 0) if evaluation else 0 }}
                         </strong>
                     </td>
+                    {% endif %}
                     <td>{{ evaluation.get('signature', '-') if evaluation else '-' }}</td>
                 </tr>
             </tbody>

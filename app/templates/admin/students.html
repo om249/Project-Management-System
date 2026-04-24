@@ -120,9 +120,8 @@
 
 <h4>Student List</h4>
     <p class="section-subtitle">
-        Showing records for <strong>{{ selected_program }}</strong>
-        {% if selected_program == "MBA" %}• <strong>{{ selected_project_category_label }}</strong>{% endif %}
-        • <strong>{{ selected_session.name }}</strong>
+        Showing records for <strong>{{ selected_program }}</strong> • <strong>{{ selected_session.name }}</strong>
+        {% if selected_program == "MBA" %}{% endif %}
     </p>
 {% if not can_edit_students %}
 <p class="section-subtitle">View-only access: you can review student records but cannot modify them.</p>

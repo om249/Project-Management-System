@@ -2308,7 +2308,12 @@ def manage_students():
 
     students = list(
         current_app.db.students.find(
-            with_program_scope(session_filter(selected_session), selected_program)
+            {
+                "$and": [
+                    session_filter(selected_session),
+                    program_filter_query(selected_program)
+                ]
+            }
         ).sort("prn", 1)
     )
 
@@ -2400,7 +2405,6 @@ def add_student():
         return redirect(url_for("admin.manage_students"))
 
     selected_program = get_current_program()
-    selected_project_category = get_current_project_category(selected_program)
     batch = None
     if batch_id:
         batch = current_app.db.batches.find_one({"_id": ObjectId(batch_id)})
@@ -2409,7 +2413,6 @@ def add_student():
             not batch
             or batch.get("session_id") != session["_id"]
             or (batch.get("program") or DEFAULT_PROGRAM) != selected_program
-            or normalize_project_category(batch.get("project_category"), selected_program) != selected_project_category
         ):
             flash("Select a valid batch from the active academic session, or keep it unassigned.", "warning")
             return redirect(url_for("admin.manage_students", session=str(session["_id"])))
@@ -2427,8 +2430,6 @@ def add_student():
                 ]
             },
             program_filter_query(selected_program)
-            ,
-            project_category_filter_query(selected_program, selected_project_category)
         ]
     })
 
@@ -2449,8 +2450,6 @@ def add_student():
                 ]
             },
             program_filter_query(selected_program)
-            ,
-            project_category_filter_query(selected_program, selected_project_category)
         ]
     })
 
@@ -2475,7 +2474,6 @@ def add_student():
         "session_id": session["_id"],
         "batch_id": batch["_id"] if batch else None,
         "program": selected_program,
-        "project_category": selected_project_category,
         "role": "student",
         "password": password,
         "password_changed": False,
@@ -2516,7 +2514,6 @@ def upload_students():
 
     session = current_app.db.academic_sessions.find_one({"_id": ObjectId(session_id)})
     selected_program = get_current_program()
-    selected_project_category = get_current_project_category(selected_program)
 
     if not session:
         flash("Selected academic session was not found.", "warning")
@@ -2693,8 +2690,6 @@ def upload_students():
                     ]
                 },
                 program_filter_query(selected_program)
-                ,
-                project_category_filter_query(selected_program, selected_project_category)
             ]
         })
 
@@ -2715,7 +2710,6 @@ def upload_students():
             "year": year,
             "session_id": session["_id"],
             "program": selected_program,
-            "project_category": selected_project_category,
             "batch_id": None,
             "role": "student",
             "password": password,
@@ -2801,7 +2795,6 @@ def assign_students_page(batch_id):
         return redirect(url_for("admin.manage_batches"))
 
     batch_program = (batch.get("program") or DEFAULT_PROGRAM).upper()
-    batch_category = normalize_project_category(batch.get("project_category"), batch_program)
 
     students = list(current_app.db.students.find({
         "$and": [
@@ -2810,7 +2803,6 @@ def assign_students_page(batch_id):
                 "name": batch.get("year")
             }),
             program_filter_query(batch_program),
-            project_category_filter_query(batch_program, batch_category),
             {
                 "$or": [
                     {"batch_id": None},
@@ -2846,12 +2838,11 @@ def save_assigned_students(batch_id):
         return redirect(url_for("admin.manage_batches"))
 
     batch_program = (batch.get("program") or DEFAULT_PROGRAM).upper()
-    batch_category = normalize_project_category(batch.get("project_category"), batch_program)
     normalized_student_ids = [ObjectId(student_id) for student_id in student_ids]
 
     # remove students already in this batch
     current_app.db.students.update_many(
-        {"batch_id": ObjectId(batch_id), **project_category_filter_query(batch_program, batch_category)},
+        {"batch_id": ObjectId(batch_id)},
         {"$set": {"batch_id": None}}
     )
 
@@ -2860,14 +2851,12 @@ def save_assigned_students(batch_id):
         current_app.db.students.update_one(
             {
                 "_id": sid,
-                **program_filter_query(batch_program),
-                **project_category_filter_query(batch_program, batch_category)
+                **program_filter_query(batch_program)
             },
             {
                 "$set": {
                     "batch_id": ObjectId(batch_id),
-                    "program": batch_program,
-                    "project_category": batch_category
+                    "program": batch_program
                 }
             }
         )
@@ -3413,12 +3402,55 @@ def _safe_mark(value):
 
 EVALUATION_TYPE_PRESENTATION_1 = "presentation1"
 EVALUATION_TYPE_PRESENTATION_2 = "presentation2"
-EVALUATION_TYPES = {EVALUATION_TYPE_PRESENTATION_1, EVALUATION_TYPE_PRESENTATION_2}
+EVALUATION_TYPE_FINAL_MCA = "final_mca"
+EVALUATION_TYPE_DESK_RESEARCH_MBA = "desk_research_mba"
+EVALUATION_TYPES = {
+    EVALUATION_TYPE_PRESENTATION_1,
+    EVALUATION_TYPE_PRESENTATION_2,
+    EVALUATION_TYPE_FINAL_MCA,
+    EVALUATION_TYPE_DESK_RESEARCH_MBA
+}
 
 
 def _normalize_evaluation_type(value):
     normalized = str(value or "").strip().lower()
     return normalized if normalized in EVALUATION_TYPES else EVALUATION_TYPE_PRESENTATION_2
+
+
+def _program_allowed_eval_types(program, project_category=None):
+    normalized_program = normalize_program(program)
+    if normalized_program == "MCA":
+        return {
+            EVALUATION_TYPE_PRESENTATION_1,
+            EVALUATION_TYPE_PRESENTATION_2,
+            EVALUATION_TYPE_FINAL_MCA
+        }
+    allowed = {EVALUATION_TYPE_PRESENTATION_1, EVALUATION_TYPE_PRESENTATION_2}
+    if str(project_category or "").strip().lower() == "desk_research":
+        allowed.add(EVALUATION_TYPE_DESK_RESEARCH_MBA)
+    return allowed
+
+
+def _resolve_eval_type_for_program(eval_type, program, project_category=None):
+    normalized_program = normalize_program(program)
+    normalized_category = str(project_category or "").strip().lower()
+    if normalized_program == "MBA" and normalized_category == "desk_research":
+        return EVALUATION_TYPE_DESK_RESEARCH_MBA
+
+    requested = _normalize_evaluation_type(eval_type)
+    allowed_types = _program_allowed_eval_types(program, project_category)
+    if requested in allowed_types:
+        return requested
+    return EVALUATION_TYPE_PRESENTATION_2
+
+
+def _evaluation_total_denominator(eval_type):
+    normalized_type = _normalize_evaluation_type(eval_type)
+    if normalized_type == EVALUATION_TYPE_PRESENTATION_1:
+        return 20
+    if normalized_type in {EVALUATION_TYPE_FINAL_MCA, EVALUATION_TYPE_DESK_RESEARCH_MBA}:
+        return 50
+    return 30
 
 
 def _evaluation_type_query(eval_type):
@@ -3431,6 +3463,15 @@ def _evaluation_type_query(eval_type):
 def _sync_shared_fields_from_presentation1(student, session_doc, project_title, synopsis_status):
     if not student or not session_doc:
         return
+
+    guide_name = "Not Assigned"
+    batch_id = student.get("batch_id")
+    if batch_id:
+        batch = current_app.db.batches.find_one({"_id": batch_id})
+        if batch and batch.get("mentor_id"):
+            mentor = current_app.db.users.find_one({"_id": batch["mentor_id"]})
+            if mentor:
+                guide_name = mentor.get("name", "Not Assigned")
 
     now = datetime.utcnow()
     current_app.db.evaluations.update_one(
@@ -3453,10 +3494,46 @@ def _sync_shared_fields_from_presentation1(student, session_doc, project_title, 
             },
             "$setOnInsert": {
                 "created_at": now,
-                "guide_name": "Not Assigned",
+                "guide_name": guide_name,
                 "chapter3": 0,
                 "chapter4": 0,
                 "execution_demo": 0,
+                "total": 0,
+                "signature": ""
+            }
+        },
+        upsert=True
+    )
+
+    if normalize_program(student.get("program")) != "MCA":
+        return
+
+    current_app.db.evaluations.update_one(
+        {
+            "student_id": student["_id"],
+            "session_id": session_doc["_id"],
+            **_evaluation_type_query(EVALUATION_TYPE_FINAL_MCA)
+        },
+        {
+            "$set": {
+                "student_id": student["_id"],
+                "batch_id": student.get("batch_id"),
+                "session_id": session_doc["_id"],
+                "evaluation_type": EVALUATION_TYPE_FINAL_MCA,
+                "roll_no": student.get("roll_no") or student.get("prn"),
+                "student_name": student.get("name"),
+                "project_title": project_title,
+                "synopsis_status": synopsis_status,
+                "updated_at": now
+            },
+            "$setOnInsert": {
+                "created_at": now,
+                "guide_name": guide_name,
+                "system_design_analysis": 0,
+                "coding_implementation": 0,
+                "testing_results": 0,
+                "report_documentation": 0,
+                "viva_presentation": 0,
                 "total": 0,
                 "signature": ""
             }
@@ -3468,7 +3545,21 @@ def _sync_shared_fields_from_presentation1(student, session_doc, project_title, 
 def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
     selected_program = get_current_program()
     selected_project_category = get_current_project_category(selected_program)
-    students_query = session_filter(selected_session)
+    base_session_program_filters = [
+        session_filter(selected_session),
+        program_filter_query(selected_program)
+    ]
+
+    scoped_batches_query = {
+        "$and": base_session_program_filters + (
+            [project_category_filter_query(selected_program, selected_project_category)]
+            if selected_program == "MBA" else []
+        )
+    }
+    scoped_batches = list(current_app.db.batches.find(scoped_batches_query).sort("name", 1))
+    scoped_batch_ids = [batch["_id"] for batch in scoped_batches]
+
+    students_query = {"$and": base_session_program_filters}
     selected_batch = None
 
     if can_edit_evaluation_all(user) or is_director(user):
@@ -3476,24 +3567,40 @@ def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
             try:
                 selected_batch = current_app.db.batches.find_one({
                     "_id": ObjectId(selected_batch_id),
-                    **program_filter_query(selected_program),
-                    **project_category_filter_query(selected_program, selected_project_category)
+                    "$and": base_session_program_filters + (
+                        [project_category_filter_query(selected_program, selected_project_category)]
+                        if selected_program == "MBA" else []
+                    )
                 })
             except Exception:
                 selected_batch = None
             if selected_batch:
                 students_query = {
                     "$and": [
-                        session_filter(selected_session),
-                        program_filter_query(selected_program),
-                        project_category_filter_query(selected_program, selected_project_category),
+                        *base_session_program_filters,
                         {"batch_id": selected_batch["_id"]}
                     ]
                 }
             else:
-                students_query = with_program_scope(session_filter(selected_session), selected_program, selected_project_category)
+                if selected_program == "MBA":
+                    students_query = {
+                        "$and": [
+                            *base_session_program_filters,
+                            {"batch_id": {"$in": scoped_batch_ids}}
+                        ]
+                    }
+                else:
+                    students_query = {"$and": base_session_program_filters}
         else:
-            students_query = with_program_scope(session_filter(selected_session), selected_program, selected_project_category)
+            if selected_program == "MBA":
+                students_query = {
+                    "$and": [
+                        *base_session_program_filters,
+                        {"batch_id": {"$in": scoped_batch_ids}}
+                    ]
+                }
+            else:
+                students_query = {"$and": base_session_program_filters}
     else:
         mentor_batch, _, _ = get_faculty_assigned_batch(
             user["_id"],
@@ -3506,9 +3613,7 @@ def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
         selected_batch = mentor_batch
         students_query = {
             "$and": [
-                session_filter(selected_session),
-                program_filter_query(selected_program),
-                project_category_filter_query(selected_program, selected_project_category),
+                *base_session_program_filters,
                 {"batch_id": mentor_batch["_id"]}
             ]
         }
@@ -3517,11 +3622,7 @@ def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
     if not students:
         students = list(current_app.db.students.find(students_query).sort("prn", 1))
 
-    batches = list(
-        current_app.db.batches.find(
-            with_program_scope(session_filter(selected_session), selected_program)
-        ).sort("name", 1)
-    )
+    batches = scoped_batches
     return students, batches, selected_batch
 
 
@@ -3530,9 +3631,15 @@ def _evaluation_student_scope(user, selected_session, selected_batch_id=None):
 @evaluation_access_required
 def evaluation_sheet():
     user = get_staff_user()
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
     selected_session_id = request.args.get("session")
     selected_batch_id = request.args.get("batch")
-    selected_eval_type = _normalize_evaluation_type(request.args.get("eval_type"))
+    selected_eval_type = _resolve_eval_type_for_program(
+        request.args.get("eval_type"),
+        selected_program,
+        selected_project_category
+    )
 
     sessions, selected_session = get_selected_session(selected_session_id)
     students, batches, selected_batch = _evaluation_student_scope(user, selected_session, selected_batch_id)
@@ -3579,6 +3686,8 @@ def evaluation_sheet():
 @evaluation_access_required
 def save_evaluation_row(student_id):
     user = get_staff_user()
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
     student = current_app.db.students.find_one({"_id": ObjectId(student_id)})
     if not student:
         flash("Student not found.", "warning")
@@ -3590,7 +3699,11 @@ def save_evaluation_row(student_id):
 
     selected_session_id = request.form.get("session_id")
     selected_batch_id = request.form.get("batch_id")
-    selected_eval_type = _normalize_evaluation_type(request.form.get("eval_type"))
+    selected_eval_type = _resolve_eval_type_for_program(
+        request.form.get("eval_type"),
+        selected_program,
+        selected_project_category
+    )
     session_doc = current_app.db.academic_sessions.find_one({"_id": ObjectId(selected_session_id)}) if selected_session_id else None
     if not session_doc:
         flash("Academic session not found.", "warning")
@@ -3601,8 +3714,23 @@ def save_evaluation_row(student_id):
     chapter3 = _safe_mark(request.form.get("chapter3"))
     chapter4 = _safe_mark(request.form.get("chapter4"))
     execution = _safe_mark(request.form.get("execution_demo"))
+    system_design_analysis = _safe_mark(request.form.get("system_design_analysis"))
+    coding_implementation = _safe_mark(request.form.get("coding_implementation"))
+    testing_results = _safe_mark(request.form.get("testing_results"))
+    report_documentation = _safe_mark(request.form.get("report_documentation"))
+    viva_presentation = _safe_mark(request.form.get("viva_presentation"))
+    c1 = _safe_mark(request.form.get("c1"))
+    c2 = _safe_mark(request.form.get("c2"))
+    c3 = _safe_mark(request.form.get("c3"))
+    c4 = _safe_mark(request.form.get("c4"))
+    c5 = _safe_mark(request.form.get("c5"))
+    evaluation_date = (request.form.get("evaluation_date") or "").strip()
     if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
         total = round(chapter1 + chapter2, 2)
+    elif selected_eval_type == EVALUATION_TYPE_FINAL_MCA:
+        total = round(system_design_analysis + coding_implementation + testing_results + report_documentation + viva_presentation, 2)
+    elif selected_eval_type == EVALUATION_TYPE_DESK_RESEARCH_MBA:
+        total = round(c1 + c2 + c3 + c4 + c5, 2)
     else:
         total = round(chapter3 + chapter4 + execution, 2)
 
@@ -3637,6 +3765,17 @@ def save_evaluation_row(student_id):
                 "chapter3": chapter3,
                 "chapter4": chapter4,
                 "execution_demo": execution,
+                "system_design_analysis": system_design_analysis,
+                "coding_implementation": coding_implementation,
+                "testing_results": testing_results,
+                "report_documentation": report_documentation,
+                "viva_presentation": viva_presentation,
+                "c1": c1,
+                "c2": c2,
+                "c3": c3,
+                "c4": c4,
+                "c5": c5,
+                "evaluation_date": evaluation_date,
                 "total": total,
                 "signature": signature,
                 "updated_by": ObjectId(current_user.id),
@@ -3652,7 +3791,8 @@ def save_evaluation_row(student_id):
     if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
         _sync_shared_fields_from_presentation1(student, session_doc, project_title, synopsis_status)
 
-    create_notification(student["_id"], f"Your evaluation sheet was updated. Total: {total}/30")
+    total_denominator = _evaluation_total_denominator(selected_eval_type)
+    create_notification(student["_id"], f"Your evaluation sheet was updated. Total: {total}/{total_denominator}")
     if student.get("email"):
         try:
             send_email(
@@ -3677,13 +3817,19 @@ def save_evaluation_row(student_id):
 @evaluation_access_required
 def save_evaluation_sheet():
     user = get_staff_user()
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
     if not (can_edit_evaluation_all(user) or get_user_designation(user) == DESIGNATION_FACULTY):
         flash("You do not have permission to edit the evaluation sheet.", "danger")
         return redirect(url_for("admin.evaluation_sheet"))
 
     selected_session_id = request.form.get("session_id")
     selected_batch_id = request.form.get("batch_id")
-    selected_eval_type = _normalize_evaluation_type(request.form.get("eval_type"))
+    selected_eval_type = _resolve_eval_type_for_program(
+        request.form.get("eval_type"),
+        selected_program,
+        selected_project_category
+    )
     session_doc = current_app.db.academic_sessions.find_one({"_id": ObjectId(selected_session_id)}) if selected_session_id else None
     if not session_doc:
         flash("Academic session not found.", "warning")
@@ -3713,8 +3859,23 @@ def save_evaluation_sheet():
         chapter3 = _safe_mark(request.form.get(f"chapter3_{student_id}"))
         chapter4 = _safe_mark(request.form.get(f"chapter4_{student_id}"))
         execution = _safe_mark(request.form.get(f"execution_demo_{student_id}"))
+        system_design_analysis = _safe_mark(request.form.get(f"system_design_analysis_{student_id}"))
+        coding_implementation = _safe_mark(request.form.get(f"coding_implementation_{student_id}"))
+        testing_results = _safe_mark(request.form.get(f"testing_results_{student_id}"))
+        report_documentation = _safe_mark(request.form.get(f"report_documentation_{student_id}"))
+        viva_presentation = _safe_mark(request.form.get(f"viva_presentation_{student_id}"))
+        c1 = _safe_mark(request.form.get(f"c1_{student_id}"))
+        c2 = _safe_mark(request.form.get(f"c2_{student_id}"))
+        c3 = _safe_mark(request.form.get(f"c3_{student_id}"))
+        c4 = _safe_mark(request.form.get(f"c4_{student_id}"))
+        c5 = _safe_mark(request.form.get(f"c5_{student_id}"))
+        evaluation_date = (request.form.get(f"evaluation_date_{student_id}") or "").strip()
         if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
             total = round(chapter1 + chapter2, 2)
+        elif selected_eval_type == EVALUATION_TYPE_FINAL_MCA:
+            total = round(system_design_analysis + coding_implementation + testing_results + report_documentation + viva_presentation, 2)
+        elif selected_eval_type == EVALUATION_TYPE_DESK_RESEARCH_MBA:
+            total = round(c1 + c2 + c3 + c4 + c5, 2)
         else:
             total = round(chapter3 + chapter4 + execution, 2)
 
@@ -3749,6 +3910,17 @@ def save_evaluation_sheet():
                     "chapter3": chapter3,
                     "chapter4": chapter4,
                     "execution_demo": execution,
+                    "system_design_analysis": system_design_analysis,
+                    "coding_implementation": coding_implementation,
+                    "testing_results": testing_results,
+                    "report_documentation": report_documentation,
+                    "viva_presentation": viva_presentation,
+                    "c1": c1,
+                    "c2": c2,
+                    "c3": c3,
+                    "c4": c4,
+                    "c5": c5,
+                    "evaluation_date": evaluation_date,
                     "total": total,
                     "signature": signature,
                     "updated_by": ObjectId(current_user.id),
@@ -3764,7 +3936,8 @@ def save_evaluation_sheet():
         if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
             _sync_shared_fields_from_presentation1(student, session_doc, project_title, synopsis_status)
 
-        create_notification(student["_id"], f"Your evaluation sheet was updated. Total: {total}/30")
+        total_denominator = _evaluation_total_denominator(selected_eval_type)
+        create_notification(student["_id"], f"Your evaluation sheet was updated. Total: {total}/{total_denominator}")
         if student.get("email"):
             try:
                 send_email(
@@ -3806,7 +3979,13 @@ def delete_evaluation_row(student_id):
 
     selected_session_id = request.form.get("session_id")
     selected_batch_id = request.form.get("batch_id")
-    selected_eval_type = _normalize_evaluation_type(request.form.get("eval_type"))
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
+    selected_eval_type = _resolve_eval_type_for_program(
+        request.form.get("eval_type"),
+        selected_program,
+        selected_project_category
+    )
     session_doc = current_app.db.academic_sessions.find_one({"_id": ObjectId(selected_session_id)}) if selected_session_id else None
     if not session_doc:
         flash("Academic session not found.", "warning")
@@ -3827,9 +4006,15 @@ def delete_evaluation_row(student_id):
 @evaluation_access_required
 def export_evaluation_sheet():
     user = get_staff_user()
+    selected_program = get_current_program()
+    selected_project_category = get_current_project_category(selected_program)
     selected_session_id = request.args.get("session")
     selected_batch_id = request.args.get("batch")
-    selected_eval_type = _normalize_evaluation_type(request.args.get("eval_type"))
+    selected_eval_type = _resolve_eval_type_for_program(
+        request.args.get("eval_type"),
+        selected_program,
+        selected_project_category
+    )
     sessions, selected_session = get_selected_session(selected_session_id)
     _ = sessions
 
@@ -3868,7 +4053,7 @@ def export_evaluation_sheet():
                 "Total (20)": evaluation.get("total", 0),
                 "Signature": evaluation.get("signature", "")
             })
-        else:
+        elif selected_eval_type == EVALUATION_TYPE_PRESENTATION_2:
             rows.append({
                 "SN": idx,
                 "Roll Number": student.get("roll_no") or student.get("prn"),
@@ -3882,6 +4067,36 @@ def export_evaluation_sheet():
                 "Total (30)": evaluation.get("total", 0),
                 "Signature": evaluation.get("signature", "")
             })
+        elif selected_eval_type == EVALUATION_TYPE_FINAL_MCA:
+            rows.append({
+                "SN": idx,
+                "Roll Number": student.get("roll_no") or student.get("prn"),
+                "Student Name": student.get("name", ""),
+                "Guide Name": guide_name,
+                "Project Title": evaluation.get("project_title", ""),
+                "Synopsis Submission Status (Yes/No)": evaluation.get("synopsis_status", "No"),
+                "System Design & Analysis (10)": evaluation.get("system_design_analysis", 0),
+                "Coding & Implementation (10)": evaluation.get("coding_implementation", 0),
+                "Testing & Results (10)": evaluation.get("testing_results", 0),
+                "Report & Documentation (10)": evaluation.get("report_documentation", 0),
+                "Viva & Presentation Skills (10)": evaluation.get("viva_presentation", 0),
+                "Total (50)": evaluation.get("total", 0),
+                "Student Signature": evaluation.get("signature", "")
+            })
+        else:
+            rows.append({
+                "SN": idx,
+                "Roll Number": student.get("roll_no") or student.get("prn"),
+                "Student Name": student.get("name", ""),
+                "C1 (10)": evaluation.get("c1", 0),
+                "C2 (10)": evaluation.get("c2", 0),
+                "C3 (10)": evaluation.get("c3", 0),
+                "C4 (10)": evaluation.get("c4", 0),
+                "C5 (10)": evaluation.get("c5", 0),
+                "Marks out of 50": evaluation.get("total", 0),
+                "Date": evaluation.get("evaluation_date", ""),
+                "Student Signature": evaluation.get("signature", "")
+            })
 
     df = pd.DataFrame(rows)
     output = BytesIO()
@@ -3890,7 +4105,14 @@ def export_evaluation_sheet():
     output.seek(0)
 
     batch_part = f"_{selected_batch['name']}" if selected_batch else ""
-    eval_label = "presentation1" if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1 else "presentation2"
+    if selected_eval_type == EVALUATION_TYPE_PRESENTATION_1:
+        eval_label = "presentation1"
+    elif selected_eval_type == EVALUATION_TYPE_FINAL_MCA:
+        eval_label = "final_mca"
+    elif selected_eval_type == EVALUATION_TYPE_DESK_RESEARCH_MBA:
+        eval_label = "desk_research_mba"
+    else:
+        eval_label = "presentation2"
     filename = f"evaluation_{eval_label}_{selected_session['name']}{batch_part}.xlsx".replace(" ", "_")
     return send_file(
         output,

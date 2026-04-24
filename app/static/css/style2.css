@@ -2089,6 +2089,47 @@ small {
     margin-bottom: 0;
 }
 
+.evaluation-intro {
+    max-width: 760px;
+}
+
+.evaluation-intro .section-subtitle {
+    margin-bottom: 8px;
+    line-height: 1.55;
+}
+
+.desk-research-note {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(191, 219, 254, 0.65);
+    background: linear-gradient(180deg, rgba(239, 246, 255, 0.92), rgba(255, 255, 255, 0.96));
+}
+
+.desk-research-note > strong {
+    display: block;
+    margin-bottom: 10px;
+    color: #1e3a8a;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.desk-research-note-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+}
+
+.desk-research-note-grid span {
+    color: #475569;
+    font-size: 0.94rem;
+    line-height: 1.45;
+}
+
+.evaluation-filters-card .session-toolbar-actions {
+    align-self: flex-start;
+}
+
 .evaluation-sheet-card {
     display: flex;
     flex-direction: column;
@@ -3673,6 +3714,10 @@ small {
 
     .form-grid.two-col,
     .final-project-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .desk-research-note-grid {
         grid-template-columns: 1fr;
     }
 
