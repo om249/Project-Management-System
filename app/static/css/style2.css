@@ -3762,3 +3762,120 @@ small {
         width: 100%;
     }
 }
+
+/* Final Projects page: aligned with evaluation layout */
+.final-projects-page {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.final-projects-title {
+    margin-top: 0 !important;
+    margin-bottom: 16px;
+}
+
+.final-projects-filters-card .session-toolbar {
+    align-items: flex-start;
+}
+
+.final-projects-filters-card .evaluation-intro h4 {
+    margin: 0 0 10px;
+    font-size: clamp(1.65rem, 2.1vw, 2.1rem);
+    line-height: 1.2;
+}
+
+.final-projects-filters-card .session-toolbar-actions {
+    align-items: flex-start;
+}
+
+.final-projects-sheet-card {
+    padding: 18px;
+}
+
+.final-projects-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: auto;
+    max-height: none;
+    border: 1px solid rgba(191, 219, 254, 0.36);
+    border-radius: 18px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.final-projects-table {
+    width: 100%;
+    min-width: 1220px;
+}
+
+.final-projects-table thead th {
+    white-space: nowrap;
+}
+
+.final-projects-table tbody td {
+    vertical-align: top;
+}
+
+.doc-icon-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.doc-icon-btn {
+    width: 36px;
+    height: 36px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 10px;
+    color: #ffffff;
+    background: linear-gradient(135deg, #059669, #10b981);
+    box-shadow: 0 8px 16px rgba(5, 150, 105, 0.22);
+}
+
+.doc-icon-btn.view {
+    color: #1e3a8a;
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    box-shadow: none;
+}
+
+.doc-icon-btn:hover {
+    transform: translateY(-1px);
+}
+
+.final-projects-page .action-buttons-row {
+    gap: 8px;
+}
+
+.final-projects-page .btn-approve,
+.final-projects-page .btn-reject {
+    min-height: 38px;
+    padding: 8px 14px;
+}
+
+.final-projects-page .table-subcopy {
+    margin-top: 4px;
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+    .final-projects-filters-card .session-toolbar-actions {
+        width: 100%;
+    }
+
+    .final-projects-filters-card .session-filter-form {
+        width: 100%;
+    }
+
+    .final-projects-filters-card .session-filter-form select {
+        width: 100%;
+    }
+
+    .final-projects-table {
+        min-width: 1080px;
+    }
+}

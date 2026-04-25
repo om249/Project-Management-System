@@ -3113,7 +3113,9 @@ def mentor_final_projects():
             final_projects=[],
             student_map={},
             batch=None,
-            batch_notice="No batch is allocated to you till now."
+            batch_notice="No batch is allocated to you till now.",
+            selected_program=selected_program,
+            selected_project_category_label=project_category_label(selected_project_category)
         )
 
     students = list(current_app.db.students.find({"batch_id": batch["_id"]}))
@@ -3132,7 +3134,9 @@ def mentor_final_projects():
         final_projects=final_projects,
         student_map=student_map,
         batch=batch,
-        batch_notice=None
+        batch_notice=None,
+        selected_program=selected_program,
+        selected_project_category_label=project_category_label(selected_project_category)
     )
 
 
@@ -3194,7 +3198,9 @@ def admin_final_projects():
         batch_map=batch_map,
         sessions=sessions,
         selected_session=selected_session,
-        selected_project_category=selected_project_category
+        selected_project_category=selected_project_category,
+        selected_program=selected_program,
+        selected_project_category_label=project_category_label(selected_project_category)
     )
 
 

@@ -1,29 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h2 class="page-title">Project Submissions</h2>
+<h2 class="page-title final-projects-title">Project Submissions</h2>
 
-<div class="card admin-access-hero">
-    <div>
-        <span class="dashboard-kicker">Final Project Oversight</span>
-        <h3>Track every final project in one place</h3>
-        <p class="section-subtitle">
-            Download project ZIP files, open GitHub or live demo links, and monitor review status across all batches.
-            {% if selected_program == "MBA" %}<strong>Current category: {{ selected_project_category_label }}</strong>.{% endif %}
-        </p>
+<section class="evaluation-page final-projects-page">
+<div class="card evaluation-filters-card final-projects-filters-card">
+    <div class="session-toolbar">
+        <div class="evaluation-intro">
+            <h4>Final Project Oversight</h4>
+            <p class="section-subtitle">
+                Download and view submitted project files, and monitor review status across all batches.
+                {% if selected_program == "MBA" %}<strong>Current category: {{ selected_project_category_label }}</strong>.{% endif %}
+            </p>
+        </div>
+        <div class="session-toolbar-actions">
+            <form method="GET" class="session-filter-form">
+                <select name="session" onchange="this.form.submit()">
+                    {% for session in sessions %}
+                    <option value="{{ session._id }}" {% if selected_session and selected_session._id == session._id %}selected{% endif %}>
+                        {{ session.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
     </div>
-
-    <form method="GET" class="session-toolbar">
-        <select name="session" onchange="this.form.submit()">
-            {% for session in sessions %}
-            <option value="{{ session._id }}" {% if selected_session and selected_session._id == session._id %}selected{% endif %}>{{ session.name }}</option>
-            {% endfor %}
-        </select>
-    </form>
 </div>
 
-<div class="card">
-<table class="custom-table">
+<div class="card modern-card evaluation-sheet-card final-projects-sheet-card">
+<div class="table-scroll-wrap evaluation-table-scroll final-projects-table-scroll">
+<table class="custom-table modern-table evaluation-table final-projects-table">
 <thead>
 <tr>
 <th>Student</th>
@@ -32,6 +38,8 @@
 <th>Mentor</th>
 <th>Category</th>
 <th>Archive</th>
+<th>Project Diary</th>
+<th>Company Certificate</th>
 <th>Links</th>
 <th>Status</th>
 <th>Action</th>
@@ -50,28 +58,72 @@
 <td>
 <strong>{{ item.project_title }}</strong>
 <div class="table-subcopy">{{ item.submitted_at.strftime("%d %b %Y %I:%M %p") if item.submitted_at else "--" }}</div>
+{% if (item.get('program') or selected_program or 'MCA') == "MBA" and item.company_name %}
+<div class="table-subcopy"><strong>Company:</strong> {{ item.company_name }}</div>
+{% endif %}
 </td>
 <td>{{ batch.name if batch else "Not Assigned" }}</td>
 <td>{{ mentor.name if mentor else "Not Assigned" }}</td>
 <td>{{ (item.get('project_category') or selected_project_category or 'mini_project').replace('_', ' ').title() }}</td>
 <td>
 {% if item.archive_file %}
-<a class="btn-view" href="{{ url_for('admin.download_file', filename=item.archive_file) }}">
-<i class="fas fa-download"></i> Download ZIP
+<div class="doc-icon-actions">
+<a class="doc-icon-btn" href="{{ url_for('admin.download_file', filename=item.archive_file) }}" title="Download Archive" aria-label="Download Archive">
+<i class="fas fa-file-arrow-down"></i>
 </a>
+{% if item.archive_pdf_file %}
+<a class="doc-icon-btn view" href="{{ url_for('admin.view_file', filename=item.archive_pdf_file) }}" target="_blank" rel="noopener noreferrer" title="View Archive" aria-label="View Archive">
+<i class="fas fa-eye"></i>
+</a>
+{% endif %}
+</div>
 {% else %}
 <span class="text-muted">No archive</span>
 {% endif %}
 </td>
 <td>
+{% if item.project_diary_file %}
+<div class="doc-icon-actions">
+<a class="doc-icon-btn" href="{{ url_for('admin.download_file', filename=item.project_diary_file) }}" title="Download Project Diary" aria-label="Download Project Diary">
+<i class="fas fa-file-arrow-down"></i>
+</a>
+{% if item.project_diary_pdf_file %}
+<a class="doc-icon-btn view" href="{{ url_for('admin.view_file', filename=item.project_diary_pdf_file) }}" target="_blank" rel="noopener noreferrer" title="View Project Diary" aria-label="View Project Diary">
+<i class="fas fa-eye"></i>
+</a>
+{% endif %}
+</div>
+{% else %}
+<span class="text-muted">Not uploaded</span>
+{% endif %}
+</td>
+<td>
+{% if item.company_certificate_file %}
+<div class="doc-icon-actions">
+<a class="doc-icon-btn" href="{{ url_for('admin.download_file', filename=item.company_certificate_file) }}" title="Download Company Certificate" aria-label="Download Company Certificate">
+<i class="fas fa-file-arrow-down"></i>
+</a>
+{% if item.company_certificate_pdf_file %}
+<a class="doc-icon-btn view" href="{{ url_for('admin.view_file', filename=item.company_certificate_pdf_file) }}" target="_blank" rel="noopener noreferrer" title="View Company Certificate" aria-label="View Company Certificate">
+<i class="fas fa-eye"></i>
+</a>
+{% endif %}
+</div>
+{% else %}
+<span class="text-muted">Not uploaded</span>
+{% endif %}
+</td>
+<td>
 <div class="action-buttons-row compact-links">
-{% if item.github_link %}
+{% if (item.get('program') or selected_program or 'MCA') != "MBA" and item.github_link %}
 <a class="btn-edit btn-sm-custom" href="{{ item.github_link }}" target="_blank" rel="noopener noreferrer">GitHub</a>
 {% endif %}
-{% if item.live_link %}
+{% if (item.get('program') or selected_program or 'MCA') != "MBA" and item.live_link %}
 <a class="btn-edit btn-sm-custom" href="{{ item.live_link }}" target="_blank" rel="noopener noreferrer">Live Link</a>
 {% endif %}
-{% if not item.github_link and not item.live_link %}
+{% if (item.get('program') or selected_program or 'MCA') == "MBA" %}
+<span class="text-muted">Not required for MBA</span>
+{% elif not item.github_link and not item.live_link %}
 <span class="text-muted">No links</span>
 {% endif %}
 </div>
@@ -100,11 +152,12 @@
 </tr>
 {% else %}
 <tr>
-<td colspan="9" class="text-muted">No final projects found for the selected academic session.</td>
+<td colspan="11" class="text-muted">No final projects found for the selected academic session.</td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
+</div>
 </div>
 
 <div id="adminFinalRemarkModal" class="remark-modal">
@@ -139,4 +192,5 @@ document.getElementById("adminFinalRemarkModal").style.display = "none";
 }
 </script>
 
+</section>
 {% endblock %}

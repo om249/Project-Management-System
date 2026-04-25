@@ -13,6 +13,7 @@ from app.services.file_converter import convert_to_pdf
 from app.services.email_service import send_email, submission_email, late_submission_email, final_project_submission_email
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
+import threading
 
 student_bp = Blueprint("student", __name__, url_prefix="/student")
 
@@ -174,6 +175,128 @@ def save_final_project_archive(file_storage, student_id):
     filename = f"final-project-{student_id}-{int(datetime.utcnow().timestamp())}{extension}"
     file_storage.save(os.path.join(upload_folder, filename))
     return filename
+
+
+def save_final_project_file(file_storage, student_id, prefix, allowed_extensions, convert_preview=True):
+    if not file_storage or not file_storage.filename:
+        return None
+
+    original_name = secure_filename(file_storage.filename)
+    _, extension = os.path.splitext(original_name)
+    extension = extension.lower()
+
+    if extension not in allowed_extensions:
+        return None
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_folder, exist_ok=True)
+
+    filename = f"{prefix}-{student_id}-{int(datetime.utcnow().timestamp())}{extension}"
+    file_path = os.path.join(upload_folder, filename)
+    file_storage.save(file_path)
+
+    if extension == ".pdf":
+        pdf_file = filename
+    elif extension == ".zip" or not convert_preview:
+        pdf_file = None
+    else:
+        pdf_file = convert_to_pdf(file_path, upload_folder)
+
+    return {
+        "file_name": filename,
+        "pdf_file": pdf_file
+    }
+
+
+def remove_uploaded_files(existing_document, keys):
+    if not existing_document:
+        return
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    removable = set()
+    for key in keys:
+        value = existing_document.get(key)
+        if value:
+            removable.add(value)
+
+    for file_name in removable:
+        file_path = os.path.join(upload_folder, file_name)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+
+
+def process_final_submission_background(app, submission_id, student_id, student_name, project_title, category_name, mentor_id, program):
+    with app.app_context():
+        submission = current_app.db.final_submissions.find_one({"_id": ObjectId(submission_id)})
+        if not submission:
+            return
+
+        upload_folder = current_app.config["UPLOAD_FOLDER"]
+        pdf_updates = {}
+        preview_pairs = [
+            ("archive_file", "archive_pdf_file"),
+            ("project_diary_file", "project_diary_pdf_file"),
+            ("company_certificate_file", "company_certificate_pdf_file")
+        ]
+        convertible_extensions = {".doc", ".docx", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tiff"}
+
+        for file_key, pdf_key in preview_pairs:
+            file_name = submission.get(file_key)
+            existing_pdf = submission.get(pdf_key)
+            if not file_name or existing_pdf:
+                continue
+
+            extension = os.path.splitext(file_name)[1].lower()
+            if extension == ".pdf":
+                pdf_updates[pdf_key] = file_name
+                continue
+
+            if extension not in convertible_extensions:
+                continue
+
+            source_path = os.path.join(upload_folder, file_name)
+            if not os.path.exists(source_path):
+                continue
+
+            converted_pdf = convert_to_pdf(source_path, upload_folder)
+            if converted_pdf:
+                pdf_updates[pdf_key] = converted_pdf
+
+        if pdf_updates:
+            current_app.db.final_submissions.update_one(
+                {"_id": ObjectId(submission_id)},
+                {"$set": pdf_updates}
+            )
+
+        notification_message = f"{student_name} submitted {category_name} final project: {project_title}"
+        emailed_addresses = set()
+        mentor_obj_id = ObjectId(mentor_id) if mentor_id else None
+
+        if mentor_obj_id:
+            create_notification(mentor_obj_id, notification_message)
+            mentor = current_app.db.users.find_one({"_id": mentor_obj_id})
+            mentor_email = (mentor or {}).get("email")
+            if mentor_email:
+                try:
+                    send_email(
+                        mentor_email,
+                        f"Final Project Submission - {category_name}",
+                        final_project_submission_email(student_name, f"{project_title} ({category_name})")
+                    )
+                    emailed_addresses.add(mentor_email)
+                except Exception as e:
+                    print("Email error:", e)
+
+        notify_leadership(
+            notification_message,
+            email_subject=f"Final Project Submission - {category_name}",
+            email_html=final_project_submission_email(student_name, f"{project_title} ({category_name})"),
+            exclude_ids=[mentor_obj_id] if mentor_obj_id else None,
+            program=program
+        )
 
 
 def _leadership_users(exclude_ids=None):
@@ -570,6 +693,9 @@ def final_project_page():
     final_project_query = {"student_id": student["_id"]}
     final_project_query.update(scoped_content_query(batch_program, batch_category))
     final_project = current_app.db.final_submissions.find_one(final_project_query)
+    if not final_project:
+        # Fallback for legacy records created before program/category scoping.
+        final_project = current_app.db.final_submissions.find_one({"student_id": student["_id"]})
 
     return render_template(
         "student/final_project.html",
@@ -577,7 +703,8 @@ def final_project_page():
         batch=batch,
         mentor=mentor,
         final_project=final_project,
-        selected_project_category=batch_category
+        selected_project_category=batch_category,
+        selected_program=batch_program
     )
 
 
@@ -776,103 +903,178 @@ def final_project_submission():
     description = request.form.get("description", "").strip()
     github_link = request.form.get("github_link", "").strip()
     live_link = request.form.get("live_link", "").strip()
+    company_name = request.form.get("company_name", "").strip()
     archive = request.files.get("project_archive")
+    project_diary = request.files.get("project_diary")
+    company_certificate = request.files.get("company_certificate")
+    is_mba = batch_program == "MBA"
 
     if not title:
         flash("Project title is required.", "warning")
-        return redirect(url_for("student.submissions"))
+        return redirect(url_for("student.final_project_page"))
 
     if not batch:
         flash("Final project submission is available after your batch is assigned.", "warning")
-        return redirect(url_for("student.submissions"))
+        return redirect(url_for("student.final_project_page"))
 
     if not archive or not archive.filename:
-        flash("Project ZIP file is required.", "warning")
-        return redirect(url_for("student.submissions"))
+        flash("Project archive is required.", "warning")
+        return redirect(url_for("student.final_project_page"))
 
-    if not is_valid_web_link(github_link):
-        flash("Enter a valid GitHub link starting with http:// or https://", "warning")
-        return redirect(url_for("student.submissions"))
+    if is_mba:
+        if not company_name:
+            flash("Company Name is required for MBA final submission.", "warning")
+            return redirect(url_for("student.final_project_page"))
+        if not project_diary or not project_diary.filename:
+            flash("Project Diary file is required for MBA final submission.", "warning")
+            return redirect(url_for("student.final_project_page"))
+        if not company_certificate or not company_certificate.filename:
+            flash("Company Certificate file is required for MBA final submission.", "warning")
+            return redirect(url_for("student.final_project_page"))
+    else:
+        if not is_valid_web_link(github_link):
+            flash("Enter a valid GitHub link starting with http:// or https://", "warning")
+            return redirect(url_for("student.final_project_page"))
 
-    if not is_valid_web_link(live_link):
-        flash("Enter a valid live/demo link starting with http:// or https://", "warning")
-        return redirect(url_for("student.submissions"))
+        if not is_valid_web_link(live_link):
+            flash("Enter a valid live/demo link starting with http:// or https://", "warning")
+            return redirect(url_for("student.final_project_page"))
 
-    existing_submission = current_app.db.final_submissions.find_one({"student_id": student["_id"]})
-    upload_folder = current_app.config["UPLOAD_FOLDER"]
-    os.makedirs(upload_folder, exist_ok=True)
+    # Keep one final submission record per student and update it for current scope.
+    final_project_query = {"student_id": student["_id"]}
+    existing_submission = current_app.db.final_submissions.find_one(final_project_query)
 
-    if existing_submission and existing_submission.get("archive_file"):
-        old_archive = os.path.join(upload_folder, existing_submission["archive_file"])
-        if os.path.exists(old_archive):
-            try:
-                os.remove(old_archive)
-            except OSError:
-                pass
+    archive_saved = save_final_project_file(
+        archive,
+        student["_id"],
+        "final-project-archive",
+        {".zip", ".pdf", ".doc", ".docx"},
+        convert_preview=False
+    )
+    if not archive_saved:
+        flash("Project archive supports only ZIP, PDF, DOC, and DOCX files.", "warning")
+        return redirect(url_for("student.final_project_page"))
 
-    archive_file = save_final_project_archive(archive, student["_id"])
-    if not archive_file:
-        flash("Only ZIP files are allowed for the final project archive.", "warning")
-        return redirect(url_for("student.submissions"))
+    project_diary_saved = None
+    company_certificate_saved = None
+    if is_mba:
+        allowed_supporting_files = {".pdf", ".doc", ".docx", ".png", ".jpg", ".jpeg", ".webp"}
+        project_diary_saved = save_final_project_file(
+            project_diary,
+            student["_id"],
+            "project-diary",
+            allowed_supporting_files,
+            convert_preview=False
+        )
+        if not project_diary_saved:
+            flash("Project Diary supports PDF, DOC, DOCX, and image files.", "warning")
+            return redirect(url_for("student.final_project_page"))
+
+        company_certificate_saved = save_final_project_file(
+            company_certificate,
+            student["_id"],
+            "company-certificate",
+            allowed_supporting_files,
+            convert_preview=False
+        )
+        if not company_certificate_saved:
+            flash("Company Certificate supports PDF, DOC, DOCX, and image files.", "warning")
+            return redirect(url_for("student.final_project_page"))
+
+    remove_uploaded_files(
+        existing_submission,
+        [
+            "archive_file",
+            "archive_pdf_file",
+            "project_diary_file",
+            "project_diary_pdf_file",
+            "company_certificate_file",
+            "company_certificate_pdf_file"
+        ]
+    )
 
     now = datetime.utcnow()
     mentor_id = batch.get("mentor_id") if batch else None
     if mentor_id:
         mentor_id = ObjectId(mentor_id)
 
+    set_payload = {
+        "student_id": student["_id"],
+        "batch_id": batch["_id"] if batch else None,
+        "mentor_id": mentor_id,
+        "session_id": batch.get("session_id") if batch else student.get("session_id"),
+        "project_title": title,
+        "description": description,
+        "archive_file": archive_saved["file_name"],
+        "archive_pdf_file": archive_saved.get("pdf_file"),
+        "status": "pending",
+        "submitted_at": now,
+        "updated_at": now,
+        "program": batch_program,
+        "project_category": batch_category
+    }
+    unset_payload = {
+        "remark": "",
+        "reviewed_at": "",
+        "archive_original_name": "",
+        "project_diary_original_name": "",
+        "company_certificate_original_name": ""
+    }
+
+    if is_mba:
+        set_payload.update({
+            "company_name": company_name,
+            "project_diary_file": project_diary_saved["file_name"],
+            "project_diary_pdf_file": project_diary_saved.get("pdf_file"),
+            "company_certificate_file": company_certificate_saved["file_name"],
+            "company_certificate_pdf_file": company_certificate_saved.get("pdf_file")
+        })
+        unset_payload.update({
+            "github_link": "",
+            "live_link": ""
+        })
+        github_link = ""
+        live_link = ""
+    else:
+        set_payload.update({
+            "github_link": github_link,
+            "live_link": live_link
+        })
+        unset_payload.update({
+            "company_name": "",
+            "project_diary_file": "",
+            "project_diary_pdf_file": "",
+            "company_certificate_file": "",
+            "company_certificate_pdf_file": ""
+        })
+
     current_app.db.final_submissions.update_one(
-        {"student_id": student["_id"]},
+        final_project_query,
         {
-            "$set": {
-                "student_id": student["_id"],
-                "batch_id": batch["_id"] if batch else None,
-                "mentor_id": mentor_id,
-                "session_id": student.get("session_id"),
-                "project_title": title,
-                "description": description,
-                "archive_file": archive_file,
-                "github_link": github_link,
-                "live_link": live_link,
-                "status": "pending",
-                "submitted_at": now,
-                "updated_at": now,
-                "program": batch_program,
-                "project_category": batch_category
-            },
-            "$unset": {
-                "remark": "",
-                "reviewed_at": ""
-            }
+            "$set": set_payload,
+            "$unset": unset_payload
         },
         upsert=True
     )
 
     student_name = student.get("name", "Student")
-    notification_message = f"{student_name} submitted {category_name} final project: {title}"
-    emailed_addresses = set()
+    saved_submission = current_app.db.final_submissions.find_one(final_project_query, {"_id": 1})
+    if saved_submission:
+        app_obj = current_app._get_current_object()
+        threading.Thread(
+            target=process_final_submission_background,
+            args=(
+                app_obj,
+                str(saved_submission["_id"]),
+                str(student["_id"]),
+                student_name,
+                title,
+                category_name,
+                str(mentor_id) if mentor_id else None,
+                batch_program
+            ),
+            daemon=True
+        ).start()
 
-    if mentor_id:
-        create_notification(mentor_id, notification_message)
-        mentor = current_app.db.users.find_one({"_id": mentor_id})
-        mentor_email = (mentor or {}).get("email")
-        if mentor_email:
-            try:
-                send_email(
-                    mentor_email,
-                    f"Final Project Submission - {category_name}",
-                    final_project_submission_email(student_name, f"{title} ({category_name})")
-                )
-                emailed_addresses.add(mentor_email)
-            except Exception as e:
-                print("Email error:", e)
-
-    notify_leadership(
-        notification_message,
-        email_subject=f"Final Project Submission - {category_name}",
-        email_html=final_project_submission_email(student_name, f"{title} ({category_name})"),
-        exclude_ids=[mentor_id] if mentor_id else None,
-        program=batch_program
-    )
-
-    flash("Final project submitted successfully.", "success")
-    return redirect(url_for("student.submissions"))
+    flash("Final project submitted successfully. Preview and email notifications are being processed.", "success")
+    return redirect(url_for("student.final_project_page"))

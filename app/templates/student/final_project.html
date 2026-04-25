@@ -10,7 +10,7 @@
             <h3 class="section-title">Project Delivery</h3>
             <span>
                 Upload your <strong>{{ selected_project_category.replace('_', ' ').title() if selected_project_category else 'Mini Project' }}</strong>
-                ZIP file and optionally share GitHub or live demo links for final review.
+                project files for final review.
             </span>
         </div>
     </div>
@@ -28,19 +28,71 @@
                 </div>
 
                 <div class="form-card">
-                    <label>Project Archive (.zip)</label>
+                    <label>{% if selected_program == "MBA" %}Project Archive (.zip/.pdf/.doc/.docx){% else %}Project Archive (.zip){% endif %}</label>
                     <label class="file-upload submission-file-upload">
                         <input type="file"
                         name="project_archive"
                         class="submission-file-input"
                         data-label-id="finalProjectFileLabel"
-                        accept=".zip"
+                        accept="{% if selected_program == 'MBA' %}.zip,.pdf,.doc,.docx{% else %}.zip{% endif %}"
                         required>
-                        <span id="finalProjectFileLabel" class="submission-file-trigger">{{ final_project.archive_file if final_project and final_project.archive_file else 'Choose ZIP File' }}</span>
+                        <span id="finalProjectFileLabel" class="submission-file-trigger">
+                            {% if final_project and final_project.archive_file %}
+                            {{ final_project.archive_file }}
+                            {% else %}
+                            {% if selected_program == 'MBA' %}Choose Archive File{% else %}Choose ZIP File{% endif %}
+                            {% endif %}
+                        </span>
                     </label>
                 </div>
             </div>
 
+            {% if selected_program == "MBA" %}
+            <div class="form-grid two-col">
+                <div class="form-card">
+                    <label>Company Name</label>
+                    <input type="text" name="company_name" value="{{ final_project.company_name if final_project else '' }}" placeholder="Enter company name" required>
+                </div>
+
+                <div class="form-card">
+                    <label>Project Diary (PDF/DOC/Image)</label>
+                    <label class="file-upload submission-file-upload">
+                        <input type="file"
+                        name="project_diary"
+                        class="submission-file-input"
+                        data-label-id="projectDiaryFileLabel"
+                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                        required>
+                        <span id="projectDiaryFileLabel" class="submission-file-trigger">
+                            {% if final_project and final_project.project_diary_file %}
+                            {{ final_project.project_diary_file }}
+                            {% else %}
+                            Choose Project Diary
+                            {% endif %}
+                        </span>
+                    </label>
+                </div>
+
+                <div class="form-card">
+                    <label>Company Certificate (PDF/DOC/Image)</label>
+                    <label class="file-upload submission-file-upload">
+                        <input type="file"
+                        name="company_certificate"
+                        class="submission-file-input"
+                        data-label-id="companyCertificateFileLabel"
+                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                        required>
+                        <span id="companyCertificateFileLabel" class="submission-file-trigger">
+                            {% if final_project and final_project.company_certificate_file %}
+                            {{ final_project.company_certificate_file }}
+                            {% else %}
+                            Choose Company Certificate
+                            {% endif %}
+                        </span>
+                    </label>
+                </div>
+            </div>
+            {% else %}
             <div class="form-grid two-col">
                 <div class="form-card">
                     <label>GitHub Link (Optional)</label>
@@ -52,6 +104,7 @@
                     <input type="url" name="live_link" value="{{ final_project.live_link if final_project else '' }}" placeholder="https://your-demo-link.com">
                 </div>
             </div>
+            {% endif %}
 
             <div class="form-card">
                 <label>Project Description</label>
@@ -66,17 +119,47 @@
 
                 {% if final_project and final_project.archive_file %}
                 <a class="btn-view" href="{{ url_for('admin.download_file', filename=final_project.archive_file) }}">
-                    <i class="fas fa-download"></i> Download Current ZIP
+                    <i class="fas fa-download"></i> Download Current Archive
                 </a>
                 {% endif %}
 
-                {% if final_project and final_project.github_link %}
+                {% if final_project and final_project.archive_pdf_file %}
+                <a class="btn-edit" href="{{ url_for('admin.view_file', filename=final_project.archive_pdf_file) }}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-eye"></i> View Archive
+                </a>
+                {% endif %}
+
+                {% if selected_program == "MBA" and final_project and final_project.project_diary_file %}
+                <a class="btn-view" href="{{ url_for('admin.download_file', filename=final_project.project_diary_file) }}">
+                    <i class="fas fa-download"></i> Download Diary
+                </a>
+                {% endif %}
+
+                {% if selected_program == "MBA" and final_project and final_project.project_diary_pdf_file %}
+                <a class="btn-edit" href="{{ url_for('admin.view_file', filename=final_project.project_diary_pdf_file) }}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-eye"></i> View Diary
+                </a>
+                {% endif %}
+
+                {% if selected_program == "MBA" and final_project and final_project.company_certificate_file %}
+                <a class="btn-view" href="{{ url_for('admin.download_file', filename=final_project.company_certificate_file) }}">
+                    <i class="fas fa-download"></i> Download Certificate
+                </a>
+                {% endif %}
+
+                {% if selected_program == "MBA" and final_project and final_project.company_certificate_pdf_file %}
+                <a class="btn-edit" href="{{ url_for('admin.view_file', filename=final_project.company_certificate_pdf_file) }}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-eye"></i> View Certificate
+                </a>
+                {% endif %}
+
+                {% if selected_program != "MBA" and final_project and final_project.github_link %}
                 <a class="btn-edit" href="{{ final_project.github_link }}" target="_blank" rel="noopener noreferrer">
                     <i class="fab fa-github"></i> Open GitHub
                 </a>
                 {% endif %}
 
-                {% if final_project and final_project.live_link %}
+                {% if selected_program != "MBA" and final_project and final_project.live_link %}
                 <a class="btn-edit" href="{{ final_project.live_link }}" target="_blank" rel="noopener noreferrer">
                     <i class="fas fa-arrow-up-right-from-square"></i> Open Live Link
                 </a>
@@ -98,9 +181,12 @@
 
                 <p><strong>Submitted On:</strong> {{ final_project.submitted_at.strftime("%d %b %Y %I:%M %p") if final_project.submitted_at else "Not available" }}</p>
                 <p><strong>Remark:</strong> {{ final_project.remark if final_project.remark else "No remark yet." }}</p>
+                {% if selected_program == "MBA" and final_project.company_name %}
+                <p><strong>Company:</strong> {{ final_project.company_name }}</p>
+                {% endif %}
             {% else %}
                 <span class="badge neutral">Not Submitted</span>
-                <p>Submit your final project ZIP when your work is ready for final review.</p>
+                <p>Submit your final project files when your work is ready for final review.</p>
             {% endif %}
 
             <p><strong>Batch:</strong> {{ batch.name if batch else "Not Assigned Yet" }}</p>
@@ -111,22 +197,30 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
-const input = document.querySelector('[data-label-id="finalProjectFileLabel"]');
-if(!input){
-return;
+const inputs = document.querySelectorAll(".submission-file-input[data-label-id]");
+if(!inputs.length){
+    return;
 }
 
-input.addEventListener("change", function(){
-const label = document.getElementById(this.dataset.labelId);
-if(!label){
-return;
-}
+inputs.forEach(function(input){
+    input.addEventListener("change", function(){
+        const label = document.getElementById(this.dataset.labelId);
+        if(!label){
+            return;
+        }
 
-if(this.files && this.files.length > 0){
-label.textContent = this.files[0].name;
-}else{
-label.textContent = "Choose ZIP File";
-}
+        if(this.files && this.files.length > 0){
+            label.textContent = this.files[0].name;
+        }else{
+            if(this.dataset.labelId === "finalProjectFileLabel"){
+                label.textContent = "{{ 'Choose Archive File' if selected_program == 'MBA' else 'Choose ZIP File' }}";
+            }else if(this.dataset.labelId === "projectDiaryFileLabel"){
+                label.textContent = "Choose Project Diary";
+            }else if(this.dataset.labelId === "companyCertificateFileLabel"){
+                label.textContent = "Choose Company Certificate";
+            }
+        }
+    });
 });
 });
 </script>
