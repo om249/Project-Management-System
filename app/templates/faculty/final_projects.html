@@ -38,7 +38,20 @@
 </td>
 <td>
 <strong>{{ item.project_title }}</strong>
-<div class="table-subcopy">{{ item.description if item.description else "No description provided." }}</div>
+{% if item.description %}
+{% set full_description = item.description.strip() %}
+{% if full_description|length > 55 %}
+<div class="table-subcopy project-description-preview" data-project-description>
+<span class="desc-short desc-short-text">{{ full_description[:55] }}...</span>
+<span class="desc-full desc-full-text" hidden>{{ full_description }}</span>
+<button type="button" class="desc-toggle-btn" onclick="toggleProjectDescription(this)">Read more</button>
+</div>
+{% else %}
+<div class="table-subcopy project-description-preview">{{ full_description }}</div>
+{% endif %}
+{% else %}
+<div class="table-subcopy">No description provided.</div>
+{% endif %}
 {% if (item.get('program') or selected_program or 'MCA') == "MBA" and item.company_name %}
 <div class="table-subcopy"><strong>Company:</strong> {{ item.company_name }}</div>
 {% endif %}
@@ -151,6 +164,30 @@ modal.style.display = "flex";
 
 function closeFinalRemark(){
 document.getElementById("finalRemarkModal").style.display = "none";
+}
+
+function toggleProjectDescription(button){
+const container = button.closest("[data-project-description]");
+if(!container){
+return;
+}
+
+const shortText = container.querySelector(".desc-short");
+const fullText = container.querySelector(".desc-full");
+if(!shortText || !fullText){
+return;
+}
+
+const isExpanded = shortText.hasAttribute("hidden");
+if(isExpanded){
+shortText.removeAttribute("hidden");
+fullText.setAttribute("hidden", "hidden");
+button.textContent = "Read more";
+}else{
+shortText.setAttribute("hidden", "hidden");
+fullText.removeAttribute("hidden");
+button.textContent = "Read less";
+}
 }
 </script>
 

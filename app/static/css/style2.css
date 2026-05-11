@@ -3862,6 +3862,45 @@ small {
     line-height: 1.45;
 }
 
+.project-description-preview {
+    margin-top: 6px;
+    max-width: 260px;
+}
+
+.desc-toggle-btn {
+    margin-top: 6px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #1d4ed8;
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.desc-toggle-btn:hover {
+    color: #1e40af;
+}
+
+.desc-short-text {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.desc-full-text {
+    display: inline;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+}
+
 @media (max-width: 900px) {
     .final-projects-filters-card .session-toolbar-actions {
         width: 100%;
