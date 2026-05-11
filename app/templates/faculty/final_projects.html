@@ -19,6 +19,7 @@
 <th>Student</th>
 <th>Project</th>
 <th>Category</th>
+<th>Company</th>
 <th>Archive</th>
 <th>Project Diary</th>
 <th>Company Certificate</th>
@@ -52,18 +53,23 @@
 {% else %}
 <div class="table-subcopy">No description provided.</div>
 {% endif %}
-{% if (item.get('program') or selected_program or 'MCA') == "MBA" and item.company_name %}
-<div class="table-subcopy"><strong>Company:</strong> {{ item.company_name }}</div>
-{% endif %}
 </td>
 <td>{{ (item.get('project_category') or selected_project_category or 'mini_project').replace('_', ' ').title() }}</td>
+<td>
+{% if (item.get('program') or selected_program or 'MCA') == "MBA" %}
+{{ item.company_name if item.company_name else "Not provided" }}
+{% else %}
+<span class="text-muted">Not required</span>
+{% endif %}
+</td>
 <td>
 {% if item.archive_file %}
 <a class="btn-view" href="{{ url_for('admin.download_file', filename=item.archive_file) }}">
 <i class="fas fa-download"></i> Download
 </a>
 {% if item.archive_pdf_file %}
-<a class="btn-edit btn-sm-custom" href="{{ url_for('admin.view_file', filename=item.archive_pdf_file) }}" target="_blank" rel="noopener noreferrer">View</a>
+<button type="button" class="btn-edit btn-sm-custom"
+onclick="openFileViewer('{{ url_for('admin.view_file', filename=item.archive_pdf_file) }}','{{ url_for('admin.download_file', filename=item.archive_file) }}')">View</button>
 {% endif %}
 {% else %}
 <span class="text-muted">No archive</span>
@@ -73,7 +79,8 @@
 {% if item.project_diary_file %}
 <a class="btn-view btn-sm-custom" href="{{ url_for('admin.download_file', filename=item.project_diary_file) }}">Download</a>
 {% if item.project_diary_pdf_file %}
-<a class="btn-edit btn-sm-custom" href="{{ url_for('admin.view_file', filename=item.project_diary_pdf_file) }}" target="_blank" rel="noopener noreferrer">View</a>
+<button type="button" class="btn-edit btn-sm-custom"
+onclick="openFileViewer('{{ url_for('admin.view_file', filename=item.project_diary_pdf_file) }}','{{ url_for('admin.download_file', filename=item.project_diary_file) }}')">View</button>
 {% endif %}
 {% else %}
 <span class="text-muted">Not uploaded</span>
@@ -83,7 +90,8 @@
 {% if item.company_certificate_file %}
 <a class="btn-view btn-sm-custom" href="{{ url_for('admin.download_file', filename=item.company_certificate_file) }}">Download</a>
 {% if item.company_certificate_pdf_file %}
-<a class="btn-edit btn-sm-custom" href="{{ url_for('admin.view_file', filename=item.company_certificate_pdf_file) }}" target="_blank" rel="noopener noreferrer">View</a>
+<button type="button" class="btn-edit btn-sm-custom"
+onclick="openFileViewer('{{ url_for('admin.view_file', filename=item.company_certificate_pdf_file) }}','{{ url_for('admin.download_file', filename=item.company_certificate_file) }}')">View</button>
 {% endif %}
 {% else %}
 <span class="text-muted">Not uploaded</span>
@@ -127,12 +135,22 @@
 </tr>
 {% else %}
 <tr>
-<td colspan="10" class="text-muted">No final projects have been submitted for this batch yet.</td>
+<td colspan="11" class="text-muted">No final projects have been submitted for this batch yet.</td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
 {% endif %}
+</div>
+
+<div id="fileModal" class="file-modal" style="display:none;">
+<div class="file-modal-content">
+<span class="close-btn" onclick="closeFileViewer()">&times;</span>
+<iframe id="fileFrame" src="" frameborder="0"></iframe>
+<div class="file-actions">
+<a id="downloadBtn" href="#" class="btn-download">Download</a>
+</div>
+</div>
 </div>
 
 <div id="finalRemarkModal" class="remark-modal">
@@ -149,6 +167,29 @@
 </div>
 
 <script>
+function openFileViewer(url, downloadUrl){
+const modal = document.getElementById("fileModal");
+const frame = document.getElementById("fileFrame");
+const downloadBtn = document.getElementById("downloadBtn");
+if(!modal || !frame || !downloadBtn){
+return;
+}
+frame.src = url;
+downloadBtn.href = downloadUrl || url;
+modal.style.display = "flex";
+}
+
+function closeFileViewer(){
+const modal = document.getElementById("fileModal");
+const frame = document.getElementById("fileFrame");
+if(modal){
+modal.style.display = "none";
+}
+if(frame){
+frame.src = "";
+}
+}
+
 function openFinalRemark(id, type){
 const modal = document.getElementById("finalRemarkModal");
 const form = document.getElementById("finalRemarkForm");
@@ -189,6 +230,32 @@ fullText.removeAttribute("hidden");
 button.textContent = "Read less";
 }
 }
+
+let facultyFinalProjectsAutoRefreshTimer = null;
+function scheduleFacultyFinalProjectsAutoRefresh(){
+if(facultyFinalProjectsAutoRefreshTimer){
+clearTimeout(facultyFinalProjectsAutoRefreshTimer);
+}
+facultyFinalProjectsAutoRefreshTimer = setTimeout(function(){
+const modal = document.getElementById("finalRemarkModal");
+const modalOpen = modal && modal.style.display === "flex";
+if(document.hidden || modalOpen){
+scheduleFacultyFinalProjectsAutoRefresh();
+return;
+}
+window.location.reload();
+}, 12000);
+}
+
+document.addEventListener("visibilitychange", function(){
+if(!document.hidden){
+scheduleFacultyFinalProjectsAutoRefresh();
+}
+});
+
+window.addEventListener("load", function(){
+scheduleFacultyFinalProjectsAutoRefresh();
+});
 </script>
 
 {% endblock %}

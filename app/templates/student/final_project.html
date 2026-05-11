@@ -19,6 +19,7 @@
         <form method="POST"
         action="{{ url_for('student.final_project_submission') }}"
         enctype="multipart/form-data"
+        data-no-loader="true"
         class="final-project-form">
 
             <div class="form-grid two-col">
@@ -112,7 +113,7 @@
             </div>
 
             <div class="dashboard-action-row">
-                <button type="submit" class="btn-primary">
+                <button type="submit" class="btn-primary" id="finalProjectSubmitBtn">
                     <i class="fas fa-folder-open"></i>
                     {% if final_project %}Reupload Final Project{% else %}Submit Final Project{% endif %}
                 </button>
@@ -179,6 +180,12 @@
                 <span class="badge pending">Pending</span>
                 {% endif %}
 
+                {% if final_project.processing_status == "processing" %}
+                <p id="finalProjectProcessingText"><strong>File Processing:</strong> Converting files and sending notifications...</p>
+                {% elif final_project.processing_status == "failed" %}
+                <p id="finalProjectProcessingText"><strong>File Processing:</strong> Some previews could not be generated. Download still works.</p>
+                {% endif %}
+
                 <p><strong>Submitted On:</strong> {{ final_project.submitted_at.strftime("%d %b %Y %I:%M %p") if final_project.submitted_at else "Not available" }}</p>
                 <p><strong>Remark:</strong> {{ final_project.remark if final_project.remark else "No remark yet." }}</p>
                 {% if selected_program == "MBA" and final_project.company_name %}
@@ -198,10 +205,6 @@
 <script>
 document.addEventListener("DOMContentLoaded", function(){
 const inputs = document.querySelectorAll(".submission-file-input[data-label-id]");
-if(!inputs.length){
-    return;
-}
-
 inputs.forEach(function(input){
     input.addEventListener("change", function(){
         const label = document.getElementById(this.dataset.labelId);
@@ -222,6 +225,77 @@ inputs.forEach(function(input){
         }
     });
 });
+
+const form = document.querySelector(".final-project-form");
+const submitBtn = document.getElementById("finalProjectSubmitBtn");
+const statusCard = document.querySelector(".final-project-status-card");
+let processingText = document.getElementById("finalProjectProcessingText");
+const pendingKey = "finalProjectUploadPending";
+
+if(form && submitBtn){
+    form.addEventListener("submit", function(){
+        sessionStorage.setItem(pendingKey, "1");
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    });
+}
+
+const isPendingFromSubmit = sessionStorage.getItem(pendingKey) === "1";
+const shouldPoll = !!processingText || isPendingFromSubmit;
+
+if(shouldPoll){
+    if(!processingText && statusCard){
+        processingText = document.createElement("p");
+        processingText.id = "finalProjectProcessingText";
+        processingText.innerHTML = "<strong>File Processing:</strong> Converting files and sending notifications...";
+        statusCard.insertBefore(processingText, statusCard.querySelector("p"));
+    }
+
+    const checkStatus = function(){
+        fetch("{{ url_for('student.final_project_status') }}", { cache: "no-store" })
+        .then(function(response){
+            if(!response.ok){
+                return null;
+            }
+            return response.json();
+        })
+        .then(function(data){
+            if(!data || !data.found){
+                setTimeout(checkStatus, 2500);
+                return;
+            }
+
+            if(data.processing_status === "processing"){
+                if(processingText){
+                    processingText.innerHTML = "<strong>File Processing:</strong> Converting files and sending notifications...";
+                }
+                setTimeout(checkStatus, 2500);
+                return;
+            }
+
+            if(data.processing_status === "ready"){
+                sessionStorage.removeItem(pendingKey);
+                if(processingText){
+                    processingText.innerHTML = "<strong>File Processing:</strong> Completed.";
+                }
+                setTimeout(function(){ window.location.reload(); }, 700);
+                return;
+            }
+
+            if(data.processing_status === "failed"){
+                sessionStorage.removeItem(pendingKey);
+                if(processingText){
+                    processingText.innerHTML = "<strong>File Processing:</strong> Some previews could not be generated. Download still works.";
+                }
+            }
+        })
+        .catch(function(){
+            setTimeout(checkStatus, 3000);
+        });
+    };
+
+    setTimeout(checkStatus, 1000);
+}
 });
 </script>
 

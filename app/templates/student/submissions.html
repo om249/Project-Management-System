@@ -191,12 +191,25 @@ onclick="openFileViewer('/admin/view-file/{{ file }}', '/admin/download/{{ file 
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
+  function resetChooseFileLabel(form){
+    const fileInput = form.querySelector(".submission-file-input");
+    if(!fileInput){
+      return;
+    }
+    const labelId = fileInput.dataset.labelId;
+    const label = labelId ? document.getElementById(labelId) : null;
+    form.reset();
+    if(label){
+      label.textContent = "Choose File";
+    }
+  }
+
   // File label update
   document.querySelectorAll(".submission-file-input").forEach(function(input){
     input.addEventListener("change", function(){
       const label = document.getElementById(this.dataset.labelId);
       if(!label) return;
-      label.textContent = this.files && this.files[0] ? this.files[0].name : "No file selected";
+      label.textContent = this.files && this.files[0] ? this.files[0].name : "Choose File";
     });
   });
 
@@ -243,21 +256,29 @@ document.addEventListener("DOMContentLoaded", function(){
           }
           
           buttonsDiv.innerHTML = btnHtml;
+          resetChooseFileLabel(this);
           
           // Success message
           showToast('Upload successful! Preview ready.', 'success');
         } else {
           statusCol.innerHTML = '<span class="badge neutral">Not Submitted</span>';
+          resetChooseFileLabel(this);
           showToast(data.error || 'Upload failed', 'danger');
         }
       } catch (error) {
         statusCol.innerHTML = '<span class="badge neutral">Not Submitted</span>';
+        resetChooseFileLabel(this);
         showToast('Network error. Please try again.', 'danger');
         console.error('Upload error:', error);
       } finally {
-        uploadBtn.disabled = false;
-        if (!uploadBtn.querySelector('.fa-sync, .fa-upload')) {
-          uploadBtn.innerHTML = uploadBtn.classList.contains('reupload-btn') ? '<i class="fas fa-sync"></i> Reupload' : '<i class="fas fa-upload"></i> Upload';
+        const activePrimary = this.querySelector('.btn-primary');
+        if(activePrimary){
+          activePrimary.disabled = false;
+          if (!activePrimary.querySelector('.fa-sync, .fa-upload')) {
+            activePrimary.innerHTML = activePrimary.classList.contains('reupload-btn')
+              ? '<i class="fas fa-sync"></i> Reupload'
+              : '<i class="fas fa-upload"></i> Upload';
+          }
         }
       }
     });

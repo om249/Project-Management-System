@@ -379,6 +379,8 @@ dropdown.classList.remove("is-open");
 </script>
 
 <script>
+let pageLoaderAutoHideTimer = null;
+
 function showPageLoader(){
     const loader = document.getElementById("pageLoader");
     if(!loader){
@@ -386,12 +388,24 @@ function showPageLoader(){
     }
     loader.classList.add("is-visible");
     loader.setAttribute("aria-hidden", "false");
+
+    if(pageLoaderAutoHideTimer){
+        clearTimeout(pageLoaderAutoHideTimer);
+    }
+    // Failsafe: if no navigation happens (download/bg response), avoid stuck overlay.
+    pageLoaderAutoHideTimer = setTimeout(function(){
+        hidePageLoader();
+    }, 12000);
 }
 
 function hidePageLoader(){
     const loader = document.getElementById("pageLoader");
     if(!loader){
         return;
+    }
+    if(pageLoaderAutoHideTimer){
+        clearTimeout(pageLoaderAutoHideTimer);
+        pageLoaderAutoHideTimer = null;
     }
     loader.classList.remove("is-visible");
     loader.setAttribute("aria-hidden", "true");
@@ -401,6 +415,14 @@ function hidePageLoader(){
 window.addEventListener("pageshow", function(){
     hidePageLoader();
 });
+window.addEventListener("focus", function(){
+    hidePageLoader();
+});
+document.addEventListener("visibilitychange", function(){
+    if(!document.hidden){
+        hidePageLoader();
+    }
+});
 
 document.addEventListener("DOMContentLoaded", function(){
     hidePageLoader();
@@ -408,6 +430,19 @@ document.addEventListener("DOMContentLoaded", function(){
     // Show loader on any form submit (uploads, updates, etc.)
     document.querySelectorAll("form").forEach(function(form){
         form.addEventListener("submit", function(){
+            if(form.hasAttribute("data-no-loader")){
+                return;
+            }
+
+            const action = (form.getAttribute("action") || "").toLowerCase();
+            if(
+                action.includes("/download") ||
+                action.includes("download") ||
+                action.includes("/export") ||
+                action.includes("export")
+            ){
+                return;
+            }
             showPageLoader();
         });
     });

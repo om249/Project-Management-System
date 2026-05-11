@@ -5,7 +5,6 @@ import os
 import threading
 from io import BytesIO
 from functools import wraps
-
 from numpy import rint
 import pandas as pd
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify, session

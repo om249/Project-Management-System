@@ -1787,6 +1787,31 @@ small {
     font-weight: 500;
 }
 
+/* Student submissions: keep choose file + action buttons on one line */
+.modern-table .upload-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: nowrap;
+}
+
+.modern-table .upload-box .submission-file-upload {
+    flex: 0 0 auto;
+}
+
+.modern-table .upload-box .upload-buttons {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: nowrap;
+    margin: 0;
+}
+
+.modern-table .upload-box .btn-primary,
+.modern-table .upload-box .btn-view {
+    white-space: nowrap;
+}
+
 .template-link,
 .file-link {
     color: var(--primary);

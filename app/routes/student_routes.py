@@ -236,6 +236,7 @@ def process_final_submission_background(app, submission_id, student_id, student_
 
         upload_folder = current_app.config["UPLOAD_FOLDER"]
         pdf_updates = {}
+        conversion_failed = False
         preview_pairs = [
             ("archive_file", "archive_pdf_file"),
             ("project_diary_file", "project_diary_pdf_file"),
@@ -259,16 +260,24 @@ def process_final_submission_background(app, submission_id, student_id, student_
 
             source_path = os.path.join(upload_folder, file_name)
             if not os.path.exists(source_path):
+                conversion_failed = True
                 continue
 
             converted_pdf = convert_to_pdf(source_path, upload_folder)
             if converted_pdf:
                 pdf_updates[pdf_key] = converted_pdf
+            else:
+                conversion_failed = True
 
+        update_payload = {}
         if pdf_updates:
+            update_payload.update(pdf_updates)
+
+        update_payload["processing_status"] = "failed" if conversion_failed else "ready"
+        if update_payload:
             current_app.db.final_submissions.update_one(
                 {"_id": ObjectId(submission_id)},
-                {"$set": pdf_updates}
+                {"$set": update_payload}
             )
 
         notification_message = f"{student_name} submitted {category_name} final project: {project_title}"
@@ -1010,6 +1019,7 @@ def final_project_submission():
         "status": "pending",
         "submitted_at": now,
         "updated_at": now,
+        "processing_status": "processing",
         "program": batch_program,
         "project_category": batch_category
     }
@@ -1078,3 +1088,36 @@ def final_project_submission():
 
     flash("Final project submitted successfully. Preview and email notifications are being processed.", "success")
     return redirect(url_for("student.final_project_page"))
+
+
+@student_bp.route("/final-project-status")
+@login_required
+@role_required("student")
+def final_project_status():
+    student = current_app.db.students.find_one({"_id": ObjectId(current_user.id)})
+    batch = current_app.db.batches.find_one({"_id": student.get("batch_id")}) if student and student.get("batch_id") else None
+    batch_program = str((batch or {}).get("program") or (student or {}).get("program") or "MCA").strip().upper()
+    if batch_program not in {"MCA", "MBA"}:
+        batch_program = "MCA"
+    batch_category = normalize_project_category((batch or {}).get("project_category") or (student or {}).get("project_category"), batch_program)
+
+    query = {"student_id": student["_id"]}
+    query.update(scoped_content_query(batch_program, batch_category))
+    final_project = current_app.db.final_submissions.find_one(query)
+    if not final_project:
+        final_project = current_app.db.final_submissions.find_one({"student_id": student["_id"]})
+
+    if not final_project:
+        return jsonify({"found": False, "processing_status": "none"})
+
+    return jsonify({
+        "found": True,
+        "processing_status": final_project.get("processing_status", "ready"),
+        "has_archive": bool(final_project.get("archive_file")),
+        "has_project_diary": bool(final_project.get("project_diary_file")),
+        "has_company_certificate": bool(final_project.get("company_certificate_file")),
+        "has_archive_preview": bool(final_project.get("archive_pdf_file")),
+        "has_diary_preview": bool(final_project.get("project_diary_pdf_file")),
+        "has_certificate_preview": bool(final_project.get("company_certificate_pdf_file")),
+        "is_submitted": True
+    })
