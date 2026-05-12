@@ -39,6 +39,20 @@
                 <button type="submit" class="btn-edit">Set As Current</button>
             </form>
             {% endif %}
+
+            {% if selected_session %}
+            <form method="POST" action="{{ url_for('admin.delete_academic_session', session_id=selected_session._id) }}">
+                <input type="hidden" name="next_url" value="{{ url_for('admin.manage_batches') }}">
+                <input type="hidden" name="force" value="1">
+                <button type="submit"
+                        class="btn-remove"
+                        title="Remove Session"
+                        aria-label="Remove Session"
+                        onclick="return confirm('Are you sure to force remove this academic session? This will delete linked batches, students, submissions, evaluations, and related files.');">
+                    X
+                </button>
+            </form>
+            {% endif %}
         </div>
     </div>
 

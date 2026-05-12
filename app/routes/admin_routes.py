@@ -1310,6 +1310,153 @@ def activate_academic_session(session_id):
     return redirect(next_url)
 
 
+@admin_bp.route("/academic-sessions/<session_id>/delete", methods=["POST"])
+@login_required
+@operations_access_required
+def delete_academic_session(session_id):
+    next_url = request.form.get("next_url") or url_for("admin.manage_batches")
+    force_remove = request.form.get("force") == "1"
+
+    try:
+        session_obj_id = ObjectId(session_id)
+    except Exception:
+        flash("Invalid academic session selected.", "warning")
+        return redirect(next_url)
+
+    session_doc = current_app.db.academic_sessions.find_one({"_id": session_obj_id})
+    if not session_doc:
+        flash("Academic session not found.", "warning")
+        return redirect(next_url)
+
+    total_sessions = current_app.db.academic_sessions.count_documents({})
+    if total_sessions <= 1:
+        flash("At least one academic session must remain in the system.", "warning")
+        return redirect(next_url)
+
+    if session_doc.get("is_active"):
+        flash("Current active session cannot be removed. Set another session as current first.", "warning")
+        return redirect(next_url)
+
+    usage_checks = [
+        ("batches", {"session_id": session_obj_id}),
+        ("students", {"$or": [{"session_id": session_obj_id}, {"year": session_doc.get("name")}]}),
+        ("deadlines", {"session_id": session_obj_id}),
+        ("progress_documents", {"session_id": session_obj_id}),
+        ("evaluations", {"session_id": session_obj_id}),
+        ("final_submissions", {"session_id": session_obj_id}),
+    ]
+
+    has_linked_records = any(
+        current_app.db[collection_name].count_documents(query, limit=1)
+        for collection_name, query in usage_checks
+    )
+
+    if has_linked_records and not force_remove:
+        flash("This session has linked records. Use force remove to delete all linked data.", "warning")
+        return redirect(next_url)
+
+    if force_remove:
+        upload_folder = current_app.config.get("UPLOAD_FOLDER")
+
+        # Collect students scoped to this academic session (supports legacy year-only records).
+        students_in_session = list(
+            current_app.db.students.find(
+                {"$or": [{"session_id": session_obj_id}, {"year": session_doc.get("name")}]},
+                {"_id": 1}
+            )
+        )
+        student_ids = [student["_id"] for student in students_in_session]
+
+        # Remove stored files referenced by progress documents.
+        progress_docs = list(
+            current_app.db.progress_documents.find({"session_id": session_obj_id}, {"file_name": 1, "pdf_file": 1})
+        )
+        for doc in progress_docs:
+            for key in ("file_name", "pdf_file"):
+                file_name = doc.get(key)
+                if file_name and upload_folder:
+                    file_path = os.path.join(upload_folder, file_name)
+                    if os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                        except OSError:
+                            pass
+
+        # Remove submission files for session students.
+        if student_ids:
+            submissions = list(
+                current_app.db.submissions.find({"student_id": {"$in": student_ids}}, {"file_name": 1, "pdf_file": 1})
+            )
+            for sub in submissions:
+                for key in ("file_name", "pdf_file"):
+                    file_name = sub.get(key)
+                    if file_name and upload_folder:
+                        file_path = os.path.join(upload_folder, file_name)
+                        if os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                            except OSError:
+                                pass
+
+            final_subs = list(
+                current_app.db.final_submissions.find(
+                    {
+                        "$or": [
+                            {"session_id": session_obj_id},
+                            {"student_id": {"$in": student_ids}}
+                        ]
+                    },
+                    {
+                        "archive_file": 1,
+                        "archive_pdf_file": 1,
+                        "project_diary_file": 1,
+                        "project_diary_pdf_file": 1,
+                        "company_certificate_file": 1,
+                        "company_certificate_pdf_file": 1
+                    }
+                )
+            )
+            for sub in final_subs:
+                for key in (
+                    "archive_file",
+                    "archive_pdf_file",
+                    "project_diary_file",
+                    "project_diary_pdf_file",
+                    "company_certificate_file",
+                    "company_certificate_pdf_file"
+                ):
+                    file_name = sub.get(key)
+                    if file_name and upload_folder:
+                        file_path = os.path.join(upload_folder, file_name)
+                        if os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                            except OSError:
+                                pass
+
+        # Delete linked records.
+        current_app.db.deadlines.delete_many({"session_id": session_obj_id})
+        current_app.db.progress_documents.delete_many({"session_id": session_obj_id})
+        current_app.db.evaluations.delete_many({"session_id": session_obj_id})
+        current_app.db.final_submissions.delete_many(
+            {
+                "$or": [
+                    {"session_id": session_obj_id},
+                    {"student_id": {"$in": student_ids}}
+                ]
+            }
+        )
+        if student_ids:
+            current_app.db.submissions.delete_many({"student_id": {"$in": student_ids}})
+            current_app.db.deadline_reminders.delete_many({"student_id": {"$in": student_ids}})
+        current_app.db.students.delete_many({"$or": [{"session_id": session_obj_id}, {"year": session_doc.get("name")}]})
+        current_app.db.batches.delete_many({"$or": [{"session_id": session_obj_id}, {"year": session_doc.get("name")}]})
+
+    current_app.db.academic_sessions.delete_one({"_id": session_obj_id})
+    flash("Academic session removed successfully.", "success")
+    return redirect(next_url)
+
+
 @admin_bp.route("/set-program", methods=["POST"])
 @login_required
 def set_program_context():

@@ -89,10 +89,16 @@
 <i class="fas fa-file-arrow-down"></i>
 </a>
 {% if item.archive_pdf_file %}
-<button type="button" class="doc-icon-btn view" title="View Archive" aria-label="View Archive"
+<!-- <button type="button" class="doc-icon-btn view" title="View Archive" aria-label="View Archive"
 onclick="openFileViewer('{{ url_for('admin.view_file', filename=item.archive_pdf_file) }}','{{ url_for('admin.download_file', filename=item.archive_file) }}')">
 <i class="fas fa-eye"></i>
+</button> -->
+
+<button type="button" class="doc-icon-btn view" title="View Archive" aria-label="View Archive"
+onclick="openFileViewer('/admin/view-file/{{ item.archive_pdf_file }}', '/admin/download/{{ item.archive_pdf_file }}')">
+<i class="fas fa-eye"></i>
 </button>
+
 {% endif %}
 </div>
 {% else %}
@@ -106,10 +112,16 @@ onclick="openFileViewer('{{ url_for('admin.view_file', filename=item.archive_pdf
 <i class="fas fa-file-arrow-down"></i>
 </a>
 {% if item.project_diary_pdf_file %}
-<button type="button" class="doc-icon-btn view" title="View Project Diary" aria-label="View Project Diary"
+<!-- <button type="button" class="doc-icon-btn view" title="View Project Diary" aria-label="View Project Diary"
 onclick="openFileViewer('{{ url_for('admin.view_file', filename=item.project_diary_pdf_file) }}','{{ url_for('admin.download_file', filename=item.project_diary_file) }}')">
 <i class="fas fa-eye"></i>
+</button> -->
+
+<button type="button" class="doc-icon-btn view" title="View Project Diary" aria-label="View Project Diary"
+onclick="openFileViewer('/admin/view-file/{{ item.project_diary_pdf_file }}', '/admin/download/{{ item.project_diary_pdf_file }}')">
+<i class="fas fa-eye"></i>
 </button>
+
 {% endif %}
 </div>
 {% else %}
@@ -123,10 +135,16 @@ onclick="openFileViewer('{{ url_for('admin.view_file', filename=item.project_dia
 <i class="fas fa-file-arrow-down"></i>
 </a>
 {% if item.company_certificate_pdf_file %}
-<button type="button" class="doc-icon-btn view" title="View Company Certificate" aria-label="View Company Certificate"
+<!-- <button type="button" class="doc-icon-btn view" title="View Company Certificate" aria-label="View Company Certificate"
 onclick="openFileViewer('{{ url_for('admin.view_file', filename=item.company_certificate_pdf_file) }}','{{ url_for('admin.download_file', filename=item.company_certificate_file) }}')">
 <i class="fas fa-eye"></i>
+</button> -->
+
+<button type="button" class="doc-icon-btn view" title="View Company Certificate" aria-label="View Company Certificate"
+onclick="openFileViewer('/admin/view-file/{{ item.company_certificate_pdf_file }}', '/admin/download/{{ item.company_certificate_pdf_file }}')">
+<i class="fas fa-eye"></i>
 </button>
+
 {% endif %}
 </div>
 {% else %}
