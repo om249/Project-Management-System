@@ -1,3 +1,4 @@
+#Project is Completed
 from app import create_app, bcrypt
 
 app = create_app()
